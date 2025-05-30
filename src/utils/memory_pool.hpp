@@ -8,9 +8,9 @@
 
 namespace stockex::utils {
 
-template <typename T> class memory_pool {
+template <typename T> class MemoryPool {
 public:
-  explicit memory_pool(std::size_t size) : free_block_count_{size} {
+  explicit MemoryPool(std::size_t size) : free_block_count_{size} {
     memory_.resize(size);
 
     for (std::size_t i = 0; i < size - 1; i++) {
@@ -56,11 +56,11 @@ public:
     free_block_count_++;
   }
 
-  memory_pool(const memory_pool &) = delete;
-  memory_pool(memory_pool &&) = delete;
+  MemoryPool(const MemoryPool &) = delete;
+  MemoryPool(MemoryPool &&) = delete;
 
-  memory_pool &operator=(const memory_pool &) = delete;
-  memory_pool &operator=(const memory_pool &&) = delete;
+  MemoryPool &operator=(const MemoryPool &) = delete;
+  MemoryPool &operator=(const MemoryPool &&) = delete;
 
 private:
   struct memory_block {
