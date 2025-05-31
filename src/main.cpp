@@ -7,7 +7,7 @@ int main() {
 
   auto ptr = x.alloc(22);
 
-  x.free(ptr);
-
   std::print("w {}  {}\n", 23, *ptr);
+
+  x.free(ptr);
 }
