@@ -66,13 +66,13 @@ public:
 private:
   struct MemoryBlock {
     alignas(T) char data_[sizeof(T)];
-    std::size_t next_ = std::numeric_limits<std::size_t>::max();
-    bool isFree_ = true;
+    std::size_t next_{std::numeric_limits<std::size_t>::max()};
+    bool isFree_{true};
   };
 
   std::vector<MemoryBlock> memory_;
-  std::size_t freeBlockCount_ = 0;
-  std::size_t freeBlockIndex_ = 0;
+  std::size_t freeBlockCount_{};
+  std::size_t freeBlockIndex_{};
 };
 
 } // namespace stockex::utils
