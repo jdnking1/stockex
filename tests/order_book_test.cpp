@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -211,5 +212,19 @@ TEST_F(OrderBookTest, ComplexScenario) {
   const models::Order *order = getOrderBook()->getOrder(1, 101);
   ASSERT_NE(order, nullptr);
   EXPECT_EQ(order->qty_, 30);
+}
+
+TEST_F(OrderBookTest, BenchmarkAddOrder) {
+  const int numOrders = 500000;
+  for (models::OrderId i = 0; i < numOrders; ++i) {
+    getOrderBook()->addOrder(1, i, i, BUY, 100 + (i % 10), 50);
+  }
+  auto start = std::chrono::high_resolution_clock::now();
+  for (models::OrderId i = numOrders; i < numOrders + numOrders; ++i) {
+    getOrderBook()->addOrder(1, i, i, BUY, 100 + (i % 10), 50);
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::micro> duration = end - start;
+  std::cout << "addOrder: " << duration.count() / numOrders << " us per call\n";
 }
 } // namespace stockex::engine

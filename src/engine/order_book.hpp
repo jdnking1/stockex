@@ -44,12 +44,6 @@ public:
     return price % models::MAX_PRICE_LEVELS;
   }
 
-  auto getOrderPriority(models::Price price) const noexcept
-      -> models::Priority {
-    const auto *priceLevel = getPriceLevel(price);
-    return priceLevel ? priceLevel->headOrder_->prev_->priority_ + 1 : 1;
-  }
-
   auto getOrder(models::ClientId clientId,
                 models::OrderId orderId) const noexcept
       -> const models::Order * {

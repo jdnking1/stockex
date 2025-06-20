@@ -12,10 +12,9 @@ auto OrderBook::addOrder(models::ClientId clientId,
                          models::Price price,
                          models::Quantity quantity) noexcept -> void {
   auto priceLevel = getPriceLevel(price);
-  auto priority = getOrderPriority(price);
   auto order =
       orderAllocator_.alloc(instrument_, clientId, clientOrderId, marketOrderId,
-                            side, price, quantity, priority);
+                            side, price, quantity);
   if (!priceLevel) {
     addPriceLevel(order);
   } else {
