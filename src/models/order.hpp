@@ -16,7 +16,6 @@ struct Order {
   Side side_{Side::INVALID};
   Price price_{INVALID_PRICE};
   Quantity qty_{INVALID_QUANTITY};
-  Priority priority_{INVALID_PRIORITY};
 
   Order *prev_{};
   Order *next_{};
@@ -25,21 +24,20 @@ struct Order {
 
   constexpr Order(InstrumentId instrumentId, ClientId clientId,
                   OrderId clientOrderId, OrderId marketOrderId, Side side,
-                  Price price, Quantity qty, Priority prty) noexcept
+                  Price price, Quantity qty) noexcept
       : instrumentId_{instrumentId}, clientId_{clientId},
         clientOrderId_{clientOrderId}, marketOrderId_{marketOrderId},
-        side_{side}, price_{price}, qty_{qty}, priority_{prty} {
+        side_{side}, price_{price}, qty_{qty} {
     prev_ = next_ = this;
   }
 
   auto toString() const noexcept {
     return std::format(
         "Order[instrument_id:{} market_order_id:{} client_id:{} "
-        "client_order_id:{} side:{} price:{} qty:{} priority:{}]",
+        "client_order_id:{} side:{} price:{} qty:{}]",
         instrumentIdToString(instrumentId_), orderIdToString(marketOrderId_),
         clientIdToString(clientId_), orderIdToString(clientOrderId_),
-        sideToString(side_), priceToString(price_), quantityToString(qty_),
-        priorityToString(priority_));
+        sideToString(side_), priceToString(price_), quantityToString(qty_));
   }
 };
 
@@ -61,7 +59,7 @@ struct PriceLevel {
     return side_ == Side::BUY ? price_ >= p : price_ <= p;
   }
 
-  auto isBetter(const PriceLevel* p) const noexcept {
+  auto isBetter(const PriceLevel *p) const noexcept {
     return side_ == Side::BUY ? price_ > p->price_ : price_ < p->price_;
   }
 

@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -180,10 +181,10 @@ TEST_F(OrderBookTest, MatchMaxEventsLimit) {
   for (models::OrderId i = 100; i < 100 + models::MAX_MATCH_EVENTS + 1; ++i) {
     AddOrderAndVerify(1, i, i, SELL, 100, 10);
   }
-  auto result = getOrderBook()->match(2, 200, BUY, 100, 1000);
+  auto result = getOrderBook()->match(2, 200, BUY, 100, 10000);
   EXPECT_EQ(result.matches_.size(), models::MAX_MATCH_EVENTS);
   EXPECT_EQ(result.overflow_, true);
-  EXPECT_EQ(result.remainingQuantity_, 1000 - models::MAX_MATCH_EVENTS * 10);
+  EXPECT_EQ(result.remainingQuantity_, 10000 - models::MAX_MATCH_EVENTS * 10);
   for (models::OrderId i = 100; i < 100 + models::MAX_MATCH_EVENTS; ++i) {
     EXPECT_EQ(getOrderBook()->getOrder(1, i), nullptr);
   }
@@ -211,5 +212,19 @@ TEST_F(OrderBookTest, ComplexScenario) {
   const models::Order *order = getOrderBook()->getOrder(1, 101);
   ASSERT_NE(order, nullptr);
   EXPECT_EQ(order->qty_, 30);
+}
+
+TEST_F(OrderBookTest, BenchmarkAddOrder) {
+  const int numOrders = 500000;
+  for (models::OrderId i = 0; i < numOrders; ++i) {
+    getOrderBook()->addOrder(1, i, i, BUY, 100 + (i % 10), 50);
+  }
+  auto start = std::chrono::high_resolution_clock::now();
+  for (models::OrderId i = numOrders; i < numOrders + numOrders; ++i) {
+    getOrderBook()->addOrder(1, i, i, BUY, 100 + (i % 10), 50);
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::micro> duration = end - start;
+  std::cout << "addOrder: " << duration.count() / numOrders << " us per call\n";
 }
 } // namespace stockex::engine
