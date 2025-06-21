@@ -25,8 +25,10 @@ public:
   template <typename... Args> T *alloc(Args &&...args) {
     ASSERT(freeBlockCount_ > 0, "No free memory blocks.");
     auto memory_block = &memory_[freeBlockIndex_];
-    //ASSERT(memory_block->isFree_, "Memory block is not free.");
-    //memory_block->isFree_ = false;
+#ifndef NDEBUG
+    ASSERT(memory_block->isFree_, "Memory block is not free.");
+    memory_block->isFree_ = false;
+#endif
     auto result = reinterpret_cast<T *>(&memory_block->data_);
     result = new (result) T(std::forward<Args>(args)...);
     freeBlockIndex_ = memory_[freeBlockIndex_].next_;
@@ -37,8 +39,10 @@ public:
   T *rawAlloc() {
     ASSERT(freeBlockCount_ > 0, "No free memory blocks.");
     auto *memory_block = &memory_[freeBlockIndex_];
-    //ASSERT(memory_block->isFree_, "Memory block is not free.");
-    //memory_block->isFree_ = false;
+#ifndef NDEBUG
+    ASSERT(memory_block->isFree_, "Memory block is not free.");
+    memory_block->isFree_ = false;
+#endif
     std::size_t current_index = freeBlockIndex_;
     freeBlockIndex_ = memory_block->next_;
     freeBlockCount_--;
@@ -50,8 +54,10 @@ public:
         reinterpret_cast<const MemoryBlock *>(ptr) - &memory_[0];
     ASSERT(block_index < memory_.size(), "Invalid memory block index.");
     auto memory_block = &memory_[block_index];
-    //ASSERT(!memory_block->isFree_, "Memory block is already free.");
-    //memory_block->isFree_ = true;
+#ifndef NDEBUG
+    ASSERT(!memory_block->isFree_, "Memory block is already free.");
+    memory_block->isFree_ = true;
+#endif
     memory_block->next_ = freeBlockIndex_;
     freeBlockIndex_ = block_index;
     freeBlockCount_++;
@@ -67,7 +73,9 @@ private:
   struct MemoryBlock {
     alignas(T) char data_[sizeof(T)];
     std::size_t next_{std::numeric_limits<std::size_t>::max()};
-    //bool isFree_{true};
+#ifndef NDEBUG
+    bool isFree_{true};
+#endif
   };
 
   std::vector<MemoryBlock> memory_;

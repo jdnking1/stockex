@@ -21,5 +21,5 @@ constexpr std::size_t MAX_NUM_ORDERS = 15'000'000;
 /// Maximum price level depth in the order books.
 constexpr std::size_t MAX_PRICE_LEVELS = 256;
 
-constexpr std::size_t MAX_MATCH_EVENTS = 100;
+constexpr std::size_t MAX_MATCH_EVENTS = 1000;
 } // namespace stockex::models

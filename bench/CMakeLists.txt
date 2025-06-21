@@ -1,3 +1,3 @@
-add_executable(bench order_book_bench.cpp)
+add_executable(orderMatchingBench order_matching_bench.cpp)
 
-target_link_libraries(bench PRIVATE libexchange)
+target_link_libraries(orderMatchingBench PRIVATE libexchange)
