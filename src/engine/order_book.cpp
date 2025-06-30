@@ -13,37 +13,30 @@ auto OrderBook::addOrder(models::ClientId clientId,
                          models::Price price,
                          models::Quantity quantity) noexcept -> void {
   auto priceLevel = getPriceLevel(price);
-  auto *order = orderAllocator_.alloc(models::QueuePosition{}, instrument_,
-                                      clientId, clientOrderId, marketOrderId,
-                                      side, price, quantity);
+  models::QueuePosition position{};
+
   if (!priceLevel) {
-    addPriceLevel(order);
-  } else {
-    auto position =
-        priceLevel->orders.push({clientOrderId, quantity, clientId});
-    order->position_ = position;
+    priceLevel = addPriceLevel(side, price);
   }
-  clientOrders_[clientId][clientOrderId] = order;
+
+  position = priceLevel->orders.push({clientOrderId, quantity, clientId});
+  clientOrders_[clientId][clientOrderId] = {position, marketOrderId, price};
 }
 
 auto OrderBook::removeOrder(models::ClientId clientId,
                             models::OrderId orderId) noexcept -> void {
   auto order = clientOrders_[clientId][orderId];
-  auto priceLevel = getPriceLevel(order->price_);
-  priceLevel->orders.remove(order->position_);
-  clientOrders_[clientId][orderId] = nullptr;
-  orderAllocator_.free(order);
+  auto priceLevel = getPriceLevel(order.price_);
+  priceLevel->orders.remove(order.position_);
   if (priceLevel->orders.empty()) {
-    removePriceLevel(order->side_, order->price_);
+    removePriceLevel(priceLevel);
   }
 }
 
-auto OrderBook::addPriceLevel(models::Order *order) noexcept -> void {
-  auto priceLevel = priceLevelAllocator_.alloc(order->side_, order->price_);
-  auto position = priceLevel->orders.push(
-      {order->clientOrderId_, order->qty_, order->clientId_});
-  order->position_ = position;
-  auto priceLevelIndex = getPriceIndex(priceLevel->price_);
+auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
+    -> models::PriceLevel * {
+  auto priceLevel = priceLevelAllocator_.alloc(side, price);
+  auto priceLevelIndex = getPriceIndex(price);
   priceLevels_[priceLevelIndex] = priceLevel;
   auto *&bestPriceLevel =
       priceLevel->side_ == models::Side::BUY ? bestBid_ : bestAsk_;
@@ -81,12 +74,14 @@ auto OrderBook::addPriceLevel(models::Order *order) noexcept -> void {
       pushBefore(currentPriceLevel, priceLevel);
     }
   }
+
+  return priceLevel;
 }
 
-auto OrderBook::removePriceLevel(models::Side side,
-                                 models::Price price) noexcept -> void {
-  auto priceLevel = getPriceLevel(price);
-  auto *&bestPriceLevel = side == models::Side::BUY ? bestBid_ : bestAsk_;
+auto OrderBook::removePriceLevel(models::PriceLevel *priceLevel) noexcept
+    -> void {
+  auto *&bestPriceLevel =
+      priceLevel->side_ == models::Side::BUY ? bestBid_ : bestAsk_;
   if (priceLevel->next_ == priceLevel) {
     bestPriceLevel = nullptr;
   } else {
@@ -97,7 +92,7 @@ auto OrderBook::removePriceLevel(models::Side side,
     }
     priceLevel->next_ = priceLevel->prev_ = nullptr;
   }
-  auto priceLevelIndex = getPriceIndex(price);
+  auto priceLevelIndex = getPriceIndex(priceLevel->price_);
   priceLevels_[priceLevelIndex] = nullptr;
   priceLevelAllocator_.free(priceLevel);
 }
@@ -113,24 +108,25 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
          bestPriceLevel->isMatchable(price) &&
          matchCount < models::MAX_MATCH_EVENTS) {
     auto matchedOrder = bestPriceLevel->orders.front();
-    auto matchedQty = std::min(remainingQuantity, matchedOrder->qty);
+    auto matchedQty = std::min(remainingQuantity, matchedOrder->qty_);
     remainingQuantity -= matchedQty;
-    matchedOrder->qty -= matchedQty;
+    matchedOrder->qty_ -= matchedQty;
     matchResults_[matchCount] = {orderId,
                                  matchedOrder->orderId_,
                                  bestPriceLevel->price_,
                                  matchedQty,
-                                 matchedOrder->qty,
+                                 matchedOrder->qty_,
                                  clientId,
                                  matchedOrder->clientId_,
                                  side,
                                  bestPriceLevel->side_};
 
-    if (matchedOrder->qty == 0) {
-      removeOrder(bestPriceLevel);
+    if (matchedOrder->qty_ == 0) {
+      removeHeadOrder(bestPriceLevel);
     }
     matchCount++;
   }
+
   if (matchCount == models::MAX_MATCH_EVENTS && bestPriceLevel &&
       bestPriceLevel->isMatchable(price)) [[unlikely]] {
     overflow = true;

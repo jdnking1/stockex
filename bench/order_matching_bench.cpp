@@ -80,7 +80,7 @@ void populateBook(stockex::engine::OrderBook &book, TestType type,
   std::mt19937 rng(42);
   for (OrderId i = 0; i < numOrders; ++i) {
     int price = generatePrice(type, i, basePrice, rng);
-    book.addOrder(1, i, i, BUY, price, orderQty);
+    book.addOrder(1, i, i, BUY, static_cast<Price>(price), static_cast<Quantity>(orderQty));
   }
 }
 
@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
 
   const auto type = parseTestType(testName);
   const auto basePrice = 100;
-  const auto numOrders = 5'000'000;
+  const auto numOrders = 15'000'000;
   const auto orderQty = (type == TestType::Fanout) ? 10 : 50;
   const auto matchQty = (type == TestType::Fanout) ? 10'000 : 1'000;
 
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < numOrders; ++i) {
     int price = generatePrice(type, i, basePrice, rng);
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = book->match(2, 1, SELL, price, matchQty);
+    auto result = book->match(2, 1, SELL, static_cast<Price>(price), static_cast<Quantity>(matchQty));
     auto end = std::chrono::high_resolution_clock::now();
     if (!result.matches_.empty()) {
       std::chrono::duration<double, std::micro> duration = end - start;

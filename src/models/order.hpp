@@ -12,13 +12,14 @@
 namespace stockex::models {
 using QueueSize = uint32_t;
 struct QueuePosition {
-  QueueSize logical_index;
-  QueueSize offset_at_insert;
+  QueueSize logicalIndex_{};
+  QueueSize offsetAtInsert_{};
 };
 
-struct ClientOrderInfo {
-  models::Price price;
-  models::QueuePosition position;
+struct OrderInfo {
+  models::QueuePosition position_{};
+  models::OrderId marketOrderId_{};
+  models::Price price_{};
 };
 
 struct Order {
@@ -53,9 +54,9 @@ struct Order {
 
 struct BasicOrder {
   OrderId orderId_{};
-  Quantity qty{};
+  Quantity qty_{};
   ClientId clientId_{};
-  bool deleted{false};
+  bool deleted_{false};
 };
 
 class OrderQueue {
@@ -72,10 +73,7 @@ private:
   }
 
 public:
-  constexpr explicit OrderQueue(QueueSize size){
-    orders_.reserve(size);
-    tail_ = static_cast<QueueSize>(orders_.capacity());
-  }
+  constexpr explicit OrderQueue(QueueSize size) { orders_.reserve(size); }
 
   auto push(BasicOrder order) noexcept -> QueuePosition {
     QueueSize index{};
@@ -93,28 +91,32 @@ public:
   };
 
   auto front() noexcept -> BasicOrder * {
-    compact();
-    while (head_ != orders_.size() && orders_[head_].deleted) {
+    // compact();
+    while (head_ != orders_.size() && orders_[head_].deleted_) {
       head_++;
     }
-    return orders_[head_].deleted ? nullptr : &orders_[head_];
+    return orders_[head_].deleted_ ? nullptr : &orders_[head_];
   }
 
   auto remove(QueuePosition pos) noexcept {
     auto [index, insert_offset] = pos;
     if (insert_offset == offset) {
-      orders_[index].deleted = true;
+      orders_[index].deleted_ = true;
     } else {
-      orders_[index - offset].deleted = true;
+      orders_[index - offset].deleted_ = true;
     }
     size_--;
   }
 
   auto pop() noexcept {
-    orders_[head_].deleted = true;
+    orders_[head_].deleted_ = true;
     head_++;
     size_--;
   }
+
+  auto front() const noexcept -> BasicOrder { return orders_[head_]; }
+
+  auto last() const noexcept -> BasicOrder { return orders_[tail_ - 1]; }
 
   auto empty() const noexcept -> bool { return size_ == 0; }
 
@@ -124,7 +126,7 @@ private:
   QueueSize head_{};
   QueueSize offset{};
   QueueSize size_{};
-  static const QueueSize COMPACT_THRESHOLD = 100000;
+  static const QueueSize COMPACT_THRESHOLD = 1000;
 };
 
 struct PriceLevel {
@@ -157,7 +159,7 @@ struct PriceLevel {
   }
 };
 
-using OrderMap = std::vector<Order *>;
+using OrderMap = std::vector<OrderInfo>;
 using ClientOrderMap = std::array<OrderMap, MAX_NUM_CLIENTS>;
 using PriceLevelMap = std::array<PriceLevel *, MAX_PRICE_LEVELS>;
 } // namespace stockex::models
