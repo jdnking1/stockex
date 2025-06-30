@@ -61,7 +61,6 @@ private:
 
     auto remaining = orders_.size() - head_;
     std::memmove(&orders_[0], &orders_[head_], remaining * sizeof(Order));
-    orders_.resize(remaining);
     offset += head_;
     tail_ = static_cast<QueueSize>(remaining);
     head_ = 0;
@@ -120,7 +119,7 @@ private:
   QueueSize head_{};
   QueueSize offset{};
   QueueSize size_{};
-  static const QueueSize COMPACT_THRESHOLD = 32;
+  static const QueueSize COMPACT_THRESHOLD = 16;
 };
 
 struct PriceLevel {

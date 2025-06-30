@@ -78,5 +78,12 @@ private:
   utils::MemoryPool<models::Order> orderAllocator_{models::MAX_NUM_ORDERS};
   utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
       models::MAX_PRICE_LEVELS};
+
+  auto removeOrder(models::PriceLevel *priceLevel) noexcept -> void {
+    priceLevel->orders.pop();
+    if (priceLevel->orders.empty()) {
+      removePriceLevel(priceLevel->side_, priceLevel->price_);
+    }
+  }
 };
 } // namespace stockex::engine

@@ -13,18 +13,15 @@ auto OrderBook::addOrder(models::ClientId clientId,
                          models::Price price,
                          models::Quantity quantity) noexcept -> void {
   auto priceLevel = getPriceLevel(price);
-  models::Order *order = nullptr;
+  auto *order = orderAllocator_.alloc(models::QueuePosition{}, instrument_,
+                                      clientId, clientOrderId, marketOrderId,
+                                      side, price, quantity);
   if (!priceLevel) {
-    order = orderAllocator_.alloc(models::QueuePosition{}, instrument_,
-                                  clientId, clientOrderId, marketOrderId, side,
-                                  price, quantity);
     addPriceLevel(order);
   } else {
     auto position =
         priceLevel->orders.push({clientOrderId, quantity, clientId});
-    order =
-        orderAllocator_.alloc(position, instrument_, clientId, clientOrderId,
-                              marketOrderId, side, price, quantity);
+    order->position_ = position;
   }
   clientOrders_[clientId][clientOrderId] = order;
 }
@@ -130,7 +127,7 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
                                  bestPriceLevel->side_};
 
     if (matchedOrder->qty == 0) {
-      removeOrder(matchedOrder->clientId_, matchedOrder->orderId_);
+      removeOrder(bestPriceLevel);
     }
     matchCount++;
   }
@@ -143,5 +140,4 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
           instrument_,
           overflow};
 }
-
 } // namespace stockex::engine
