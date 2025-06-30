@@ -32,7 +32,7 @@ class OrderBook {
 public:
   explicit OrderBook(models::InstrumentId instrument)
       : instrument_{instrument} {
-    clientOrders_.fill({models::MAX_NUM_ORDERS, nullptr});
+    clientOrders_.fill({models::MAX_NUM_ORDERS, models::OrderInfo{}});
   }
 
   OrderBook(const OrderBook &) = delete;
@@ -46,14 +46,9 @@ public:
 
   auto getOrder(models::ClientId clientId,
                 models::OrderId orderId) const noexcept
-      -> const models::Order * {
+      -> const models::OrderInfo & {
     return clientOrders_[clientId][orderId];
   }
-
-  auto modifyOrder(models::ClientId clientId, models::OrderId orderId,
-                   models::Quantity qty) noexcept -> void {
-    clientOrders_[clientId][orderId]->qty_ = qty;
-  };
 
   auto getPriceLevel(models::Price price) const noexcept
       -> models::PriceLevel * {
@@ -65,23 +60,30 @@ public:
 
   auto removeOrder(models::ClientId, models::OrderId) noexcept -> void;
 
-  auto addPriceLevel(models::Order *) noexcept -> void;
+  auto addPriceLevel(models::Side side, models::Price price) noexcept
+      -> models::PriceLevel *;
 
-  auto removePriceLevel(models::Side, models::Price) noexcept -> void;
+  auto removePriceLevel(models::PriceLevel *priceLevel) noexcept -> void;
 
   auto match(models::ClientId clientId, models::OrderId orderId,
              models::Side side, models::Price price,
              models::Quantity quantity) noexcept -> MatchResultSet;
 
 private:
-  models::InstrumentId instrument_{};
   models::PriceLevel *bestBid_{};
   models::PriceLevel *bestAsk_{};
   models::PriceLevelMap priceLevels_{};
   models::ClientOrderMap clientOrders_{};
   std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
-  utils::MemoryPool<models::Order> orderAllocator_{models::MAX_NUM_ORDERS};
   utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
       models::MAX_PRICE_LEVELS};
+  models::InstrumentId instrument_{};
+
+  auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {
+    priceLevel->orders.pop();
+    if (priceLevel->orders.empty()) {
+      removePriceLevel(priceLevel);
+    }
+  }
 };
 } // namespace stockex::engine

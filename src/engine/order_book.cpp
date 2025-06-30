@@ -4,6 +4,7 @@
 
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
+#include "models/order.hpp"
 
 namespace stockex::engine {
 auto OrderBook::addOrder(models::ClientId clientId,
@@ -12,44 +13,30 @@ auto OrderBook::addOrder(models::ClientId clientId,
                          models::Price price,
                          models::Quantity quantity) noexcept -> void {
   auto priceLevel = getPriceLevel(price);
-  auto order = orderAllocator_.alloc(instrument_, clientId, clientOrderId,
-                                     marketOrderId, side, price, quantity);
+  models::QueuePosition position{};
+
   if (!priceLevel) {
-    addPriceLevel(order);
-  } else {
-    auto *tailOrder = priceLevel->headOrder_->prev_;
-    tailOrder->next_ = order;
-    order->prev_ = tailOrder;
-    order->next_ = priceLevel->headOrder_;
-    priceLevel->headOrder_->prev_ = order;
+    priceLevel = addPriceLevel(side, price);
   }
-  clientOrders_[clientId][clientOrderId] = order;
+
+  position = priceLevel->orders.push({clientOrderId, quantity, clientId});
+  clientOrders_[clientId][clientOrderId] = {position, marketOrderId, price};
 }
 
 auto OrderBook::removeOrder(models::ClientId clientId,
                             models::OrderId orderId) noexcept -> void {
   auto order = clientOrders_[clientId][orderId];
-  auto priceLevel = getPriceLevel(order->price_);
-  if (order->prev_ == order) {
-    removePriceLevel(order->side_, order->price_);
-  } else {
-    auto prevOrder = order->prev_;
-    auto nextOrder = order->next_;
-    prevOrder->next_ = nextOrder;
-    nextOrder->prev_ = prevOrder;
-    if (priceLevel->headOrder_ == order) {
-      priceLevel->headOrder_ = nextOrder;
-    }
-    order->prev_ = order->next_ = nullptr;
+  auto priceLevel = getPriceLevel(order.price_);
+  priceLevel->orders.remove(order.position_);
+  if (priceLevel->orders.empty()) {
+    removePriceLevel(priceLevel);
   }
-  clientOrders_[clientId][orderId] = nullptr;
-  orderAllocator_.free(order);
 }
 
-auto OrderBook::addPriceLevel(models::Order *order) noexcept -> void {
-  auto priceLevel =
-      priceLevelAllocator_.alloc(order->side_, order->price_, order);
-  auto priceLevelIndex = getPriceIndex(priceLevel->price_);
+auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
+    -> models::PriceLevel * {
+  auto priceLevel = priceLevelAllocator_.alloc(side, price);
+  auto priceLevelIndex = getPriceIndex(price);
   priceLevels_[priceLevelIndex] = priceLevel;
   auto *&bestPriceLevel =
       priceLevel->side_ == models::Side::BUY ? bestBid_ : bestAsk_;
@@ -87,12 +74,14 @@ auto OrderBook::addPriceLevel(models::Order *order) noexcept -> void {
       pushBefore(currentPriceLevel, priceLevel);
     }
   }
+
+  return priceLevel;
 }
 
-auto OrderBook::removePriceLevel(models::Side side,
-                                 models::Price price) noexcept -> void {
-  auto priceLevel = getPriceLevel(price);
-  auto *&bestPriceLevel = side == models::Side::BUY ? bestBid_ : bestAsk_;
+auto OrderBook::removePriceLevel(models::PriceLevel *priceLevel) noexcept
+    -> void {
+  auto *&bestPriceLevel =
+      priceLevel->side_ == models::Side::BUY ? bestBid_ : bestAsk_;
   if (priceLevel->next_ == priceLevel) {
     bestPriceLevel = nullptr;
   } else {
@@ -103,7 +92,7 @@ auto OrderBook::removePriceLevel(models::Side side,
     }
     priceLevel->next_ = priceLevel->prev_ = nullptr;
   }
-  auto priceLevelIndex = getPriceIndex(price);
+  auto priceLevelIndex = getPriceIndex(priceLevel->price_);
   priceLevels_[priceLevelIndex] = nullptr;
   priceLevelAllocator_.free(priceLevel);
 }
@@ -118,25 +107,26 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
   while (remainingQuantity && bestPriceLevel &&
          bestPriceLevel->isMatchable(price) &&
          matchCount < models::MAX_MATCH_EVENTS) {
-    auto matchedOrder = bestPriceLevel->headOrder_;
+    auto matchedOrder = bestPriceLevel->orders.front();
     auto matchedQty = std::min(remainingQuantity, matchedOrder->qty_);
     remainingQuantity -= matchedQty;
     matchedOrder->qty_ -= matchedQty;
     matchResults_[matchCount] = {orderId,
-                                 matchedOrder->clientOrderId_,
-                                 matchedOrder->price_,
+                                 matchedOrder->orderId_,
+                                 bestPriceLevel->price_,
                                  matchedQty,
                                  matchedOrder->qty_,
                                  clientId,
                                  matchedOrder->clientId_,
                                  side,
-                                 matchedOrder->side_};
+                                 bestPriceLevel->side_};
 
     if (matchedOrder->qty_ == 0) {
-      removeOrder(matchedOrder->clientId_, matchedOrder->clientOrderId_);
+      removeHeadOrder(bestPriceLevel);
     }
     matchCount++;
   }
+
   if (matchCount == models::MAX_MATCH_EVENTS && bestPriceLevel &&
       bestPriceLevel->isMatchable(price)) [[unlikely]] {
     overflow = true;
@@ -146,5 +136,4 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
           instrument_,
           overflow};
 }
-
 } // namespace stockex::engine

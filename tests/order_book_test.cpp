@@ -8,6 +8,7 @@
 #include "models/order.hpp"
 
 namespace stockex::engine {
+
 using enum models::Side;
 class OrderBookTest : public ::testing::Test {
 protected:
@@ -18,14 +19,15 @@ protected:
                          models::OrderId marketOrderId, models::Side side,
                          models::Price price, models::Quantity qty) {
     book_->addOrder(clientId, clientOrderId, marketOrderId, side, price, qty);
-    const models::Order *order = book_->getOrder(clientId, clientOrderId);
-    ASSERT_NE(order, nullptr);
-    EXPECT_EQ(order->clientId_, clientId);
-    EXPECT_EQ(order->clientOrderId_, clientOrderId);
-    EXPECT_EQ(order->marketOrderId_, marketOrderId);
-    EXPECT_EQ(order->side_, side);
-    EXPECT_EQ(order->price_, price);
-    EXPECT_EQ(order->qty_, qty);
+    auto &orderInfo = book_->getOrder(clientId, clientOrderId);
+    const auto *priceLevel = book_->getPriceLevel(price);
+    auto bOrder = priceLevel->orders.last();
+    EXPECT_EQ(bOrder.clientId_, clientId);
+    EXPECT_EQ(bOrder.orderId_, clientOrderId);
+    EXPECT_EQ(orderInfo.marketOrderId_, marketOrderId);
+    EXPECT_EQ(priceLevel->side_, side);
+    EXPECT_EQ(orderInfo.price_, price);
+    EXPECT_EQ(bOrder.qty_, qty);
   }
 
   auto VerifyMatchResult(const MatchResult &result,
@@ -66,10 +68,10 @@ TEST_F(OrderBookTest, AddSingleSellOrder) {
 TEST_F(OrderBookTest, AddMultipleOrdersSamePriceLevel) {
   AddOrderAndVerify(1, 100, 100, BUY, 100, 50);
   AddOrderAndVerify(1, 101, 101, BUY, 100, 30);
-  const models::Order *order1 = getOrderBook()->getOrder(1, 100);
-  const models::Order *order2 = getOrderBook()->getOrder(1, 101);
-  EXPECT_EQ(order1->next_, order2);
-  EXPECT_EQ(order2->prev_, order1);
+  const auto &order1 = getOrderBook()->getOrder(1, 100);
+  const auto &order2 = getOrderBook()->getOrder(1, 101);
+  EXPECT_EQ(order1.position_.logicalIndex_, 0);
+  EXPECT_EQ(order2.position_.logicalIndex_, 1);
 }
 
 TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
@@ -84,33 +86,15 @@ TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
 TEST_F(OrderBookTest, RemoveOrder) {
   AddOrderAndVerify(1, 100, 100, BUY, 100, 50);
   getOrderBook()->removeOrder(1, 100);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
-}
-
-TEST_F(OrderBookTest, RemoveLastOrderInPriceLevel) {
-  AddOrderAndVerify(1, 100, 100, SELL, 200, 30);
-  getOrderBook()->removeOrder(1, 100);
-  EXPECT_EQ(getOrderBook()->getPriceLevel(200), nullptr);
 }
 
 TEST_F(OrderBookTest, RemoveOrderFromMultiOrderPriceLevel) {
   AddOrderAndVerify(1, 100, 100, BUY, 100, 50);
   AddOrderAndVerify(1, 101, 101, BUY, 100, 30);
   getOrderBook()->removeOrder(1, 100);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
-  const models::Order *order2 = getOrderBook()->getOrder(1, 101);
-  ASSERT_NE(order2, nullptr);
-  EXPECT_EQ(order2->qty_, 30);
-  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->headOrder_, order2);
-}
-
-TEST_F(OrderBookTest, ModifyOrderQuantity) {
-  AddOrderAndVerify(1, 100, 100, BUY, 100, 50);
-  getOrderBook()->modifyOrder(1, 100, 75);
-  const models::Order *order = getOrderBook()->getOrder(1, 100);
-  ASSERT_NE(order, nullptr);
-  EXPECT_EQ(order->qty_, 75);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders.front()->qty_, 30);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders.front()->orderId_, 101);
 }
 
 TEST_F(OrderBookTest, MatchSingleFullFill) {
@@ -119,7 +103,6 @@ TEST_F(OrderBookTest, MatchSingleFullFill) {
   ASSERT_EQ(result.matches_.size(), 1);
   VerifyMatchResult(result.matches_[0], 101, 100, 100, 50, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 0);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
 
@@ -129,7 +112,7 @@ TEST_F(OrderBookTest, MatchSinglePartialFillIncoming) {
   ASSERT_EQ(result.matches_.size(), 1);
   VerifyMatchResult(result.matches_[0], 101, 100, 100, 30, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 20);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
 
 TEST_F(OrderBookTest, MatchSinglePartialFillResting) {
@@ -138,9 +121,9 @@ TEST_F(OrderBookTest, MatchSinglePartialFillResting) {
   ASSERT_EQ(result.matches_.size(), 1);
   VerifyMatchResult(result.matches_[0], 101, 100, 100, 30, 20, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 0);
-  const models::Order *order = getOrderBook()->getOrder(1, 100);
-  ASSERT_NE(order, nullptr);
-  EXPECT_EQ(order->qty_, 20);
+  const auto *priceLevel = getOrderBook()->getPriceLevel(100);
+  ASSERT_NE(priceLevel, nullptr);
+  EXPECT_EQ(priceLevel->orders.front().qty_, 20);
 }
 
 TEST_F(OrderBookTest, MatchMultipleOrdersSamePriceLevel) {
@@ -151,8 +134,7 @@ TEST_F(OrderBookTest, MatchMultipleOrdersSamePriceLevel) {
   VerifyMatchResult(result.matches_[0], 102, 100, 100, 20, 0, 2, 1, BUY, SELL);
   VerifyMatchResult(result.matches_[1], 102, 101, 100, 20, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 10);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 101), nullptr);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
 
 TEST_F(OrderBookTest, MatchMultiplePriceLevels) {
@@ -163,8 +145,8 @@ TEST_F(OrderBookTest, MatchMultiplePriceLevels) {
   VerifyMatchResult(result.matches_[0], 102, 101, 99, 20, 0, 2, 1, BUY, SELL);
   VerifyMatchResult(result.matches_[1], 102, 100, 100, 20, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 10);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 101), nullptr);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(99), nullptr);
 }
 
 TEST_F(OrderBookTest, NoMatchPriceMismatch) {
@@ -172,9 +154,9 @@ TEST_F(OrderBookTest, NoMatchPriceMismatch) {
   auto result = getOrderBook()->match(2, 101, BUY, 100, 50);
   EXPECT_EQ(result.matches_.size(), 0);
   EXPECT_EQ(result.remainingQuantity_, 50);
-  const models::Order *order = getOrderBook()->getOrder(1, 100);
-  ASSERT_NE(order, nullptr);
-  EXPECT_EQ(order->qty_, 50);
+  const auto *priceLevel = getOrderBook()->getPriceLevel(101);
+  ASSERT_NE(priceLevel, nullptr);
+  EXPECT_EQ(priceLevel->orders.front().qty_, 50);
 }
 
 TEST_F(OrderBookTest, MatchMaxEventsLimit) {
@@ -185,21 +167,15 @@ TEST_F(OrderBookTest, MatchMaxEventsLimit) {
   EXPECT_EQ(result.matches_.size(), models::MAX_MATCH_EVENTS);
   EXPECT_EQ(result.overflow_, true);
   EXPECT_EQ(result.remainingQuantity_, 10000 - models::MAX_MATCH_EVENTS * 10);
-  for (models::OrderId i = 100; i < 100 + models::MAX_MATCH_EVENTS; ++i) {
-    EXPECT_EQ(getOrderBook()->getOrder(1, i), nullptr);
-  }
-  EXPECT_NE(getOrderBook()->getOrder(1, 100 + models::MAX_MATCH_EVENTS),
-            nullptr);
+  EXPECT_NE(getOrderBook()->getPriceLevel(100), nullptr);
 }
 
 TEST_F(OrderBookTest, ComplexScenario) {
-  AddOrderAndVerify(1, 100, 100, SELL, 100, 20);
+  AddOrderAndVerify(1, 100, 100, SELL, 100, 25);
   AddOrderAndVerify(1, 101, 101, SELL, 101, 30);
   AddOrderAndVerify(1, 102, 102, SELL, 99, 40);
   AddOrderAndVerify(2, 200, 200, BUY, 98, 50);
   AddOrderAndVerify(2, 201, 201, BUY, 97, 60);
-
-  getOrderBook()->modifyOrder(1, 100, 25);
 
   auto result = getOrderBook()->match(3, 300, BUY, 100, 100);
   ASSERT_EQ(result.matches_.size(), 2);
@@ -207,11 +183,11 @@ TEST_F(OrderBookTest, ComplexScenario) {
   VerifyMatchResult(result.matches_[1], 300, 100, 100, 25, 0, 3, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 35);
 
-  EXPECT_EQ(getOrderBook()->getOrder(1, 100), nullptr);
-  EXPECT_EQ(getOrderBook()->getOrder(1, 102), nullptr);
-  const models::Order *order = getOrderBook()->getOrder(1, 101);
-  ASSERT_NE(order, nullptr);
-  EXPECT_EQ(order->qty_, 30);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(99), nullptr);
+  const auto *priceLevel = getOrderBook()->getPriceLevel(101);
+  ASSERT_NE(priceLevel, nullptr);
+  EXPECT_EQ(priceLevel->orders.front().qty_, 30);
 }
 
 TEST_F(OrderBookTest, BenchmarkAddOrder) {

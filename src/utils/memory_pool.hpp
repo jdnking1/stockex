@@ -58,6 +58,7 @@ public:
     ASSERT(!memory_block->isFree_, "Memory block is already free.");
     memory_block->isFree_ = true;
 #endif
+    ptr->~T();
     memory_block->next_ = freeBlockIndex_;
     freeBlockIndex_ = block_index;
     freeBlockCount_++;
