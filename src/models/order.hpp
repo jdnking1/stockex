@@ -16,6 +16,11 @@ struct QueuePosition {
   QueueSize offset_at_insert;
 };
 
+struct ClientOrderInfo {
+  models::Price price;
+  models::QueuePosition position;
+};
+
 struct Order {
   QueuePosition position_{};
   OrderId clientOrderId_{INVALID_ORDER_ID};
@@ -60,7 +65,7 @@ private:
       return;
 
     auto remaining = orders_.size() - head_;
-    std::memmove(&orders_[0], &orders_[head_], remaining * sizeof(Order));
+    std::memmove(&orders_[0], &orders_[head_], remaining * sizeof(BasicOrder));
     offset += head_;
     tail_ = static_cast<QueueSize>(remaining);
     head_ = 0;
@@ -119,7 +124,7 @@ private:
   QueueSize head_{};
   QueueSize offset{};
   QueueSize size_{};
-  static const QueueSize COMPACT_THRESHOLD = 16;
+  static const QueueSize COMPACT_THRESHOLD = 100000;
 };
 
 struct PriceLevel {
