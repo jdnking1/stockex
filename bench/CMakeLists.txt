@@ -1,3 +1,5 @@
 add_executable(orderMatchingBench order_matching_bench.cpp)
+add_executable(orderQueueBench order_queue_bench.cpp)
 
 target_link_libraries(orderMatchingBench PRIVATE libexchange)
+target_link_libraries(orderQueueBench PRIVATE libexchange)

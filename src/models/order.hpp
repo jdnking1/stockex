@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <format>
 #include <vector>
 
@@ -8,28 +10,31 @@
 #include "constants.hpp"
 
 namespace stockex::models {
+using QueueSize = uint32_t;
+struct QueuePosition {
+  QueueSize logical_index;
+  QueueSize offset_at_insert;
+};
+
 struct Order {
-  InstrumentId instrumentId_{INVALID_INSTRUMENT_ID};
-  ClientId clientId_{INVALID_CLIENT_ID};
+  QueuePosition position_{};
   OrderId clientOrderId_{INVALID_ORDER_ID};
   OrderId marketOrderId_{INVALID_ORDER_ID};
-  Side side_{Side::INVALID};
   Price price_{INVALID_PRICE};
   Quantity qty_{INVALID_QUANTITY};
-
-  Order *prev_{};
-  Order *next_{};
+  InstrumentId instrumentId_{INVALID_INSTRUMENT_ID};
+  ClientId clientId_{INVALID_CLIENT_ID};
+  Side side_{Side::INVALID};
 
   constexpr Order() noexcept = default;
 
-  constexpr Order(InstrumentId instrumentId, ClientId clientId,
-                  OrderId clientOrderId, OrderId marketOrderId, Side side,
-                  Price price, Quantity qty) noexcept
-      : instrumentId_{instrumentId}, clientId_{clientId},
-        clientOrderId_{clientOrderId}, marketOrderId_{marketOrderId},
-        side_{side}, price_{price}, qty_{qty} {
-    prev_ = next_ = this;
-  }
+  constexpr Order(QueuePosition position, InstrumentId instrumentId,
+                  ClientId clientId, OrderId clientOrderId,
+                  OrderId marketOrderId, Side side, Price price,
+                  Quantity qty) noexcept
+      : position_{position}, clientOrderId_{clientOrderId},
+        marketOrderId_{marketOrderId}, price_{price}, qty_{qty},
+        instrumentId_{instrumentId}, clientId_{clientId}, side_{side} {}
 
   auto toString() const noexcept {
     return std::format(
@@ -41,17 +46,94 @@ struct Order {
   }
 };
 
+struct BasicOrder {
+  OrderId orderId_{};
+  Quantity qty{};
+  ClientId clientId_{};
+  bool deleted{false};
+};
+
+class OrderQueue {
+private:
+  auto compact() noexcept {
+    if (head_ < COMPACT_THRESHOLD || head_ * 2 < orders_.size())
+      return;
+
+    auto remaining = orders_.size() - head_;
+    std::memmove(&orders_[0], &orders_[head_], remaining * sizeof(Order));
+    orders_.resize(remaining);
+    offset += head_;
+    tail_ = static_cast<QueueSize>(remaining);
+    head_ = 0;
+  }
+
+public:
+  constexpr explicit OrderQueue(QueueSize size){
+    orders_.reserve(size);
+    tail_ = static_cast<QueueSize>(orders_.capacity());
+  }
+
+  auto push(BasicOrder order) noexcept -> QueuePosition {
+    QueueSize index{};
+    if (tail_ < orders_.size()) {
+      orders_[tail_] = order;
+      index = tail_;
+      ++tail_;
+    } else {
+      orders_.push_back(order);
+      index = static_cast<QueueSize>(orders_.size() - 1);
+      ++tail_;
+    }
+    size_++;
+    return {index, offset};
+  };
+
+  auto front() noexcept -> BasicOrder * {
+    compact();
+    while (head_ != orders_.size() && orders_[head_].deleted) {
+      head_++;
+    }
+    return orders_[head_].deleted ? nullptr : &orders_[head_];
+  }
+
+  auto remove(QueuePosition pos) noexcept {
+    auto [index, insert_offset] = pos;
+    if (insert_offset == offset) {
+      orders_[index].deleted = true;
+    } else {
+      orders_[index - offset].deleted = true;
+    }
+    size_--;
+  }
+
+  auto pop() noexcept {
+    orders_[head_].deleted = true;
+    head_++;
+    size_--;
+  }
+
+  auto empty() const noexcept -> bool { return size_ == 0; }
+
+private:
+  std::vector<BasicOrder> orders_{};
+  QueueSize tail_{};
+  QueueSize head_{};
+  QueueSize offset{};
+  QueueSize size_{};
+  static const QueueSize COMPACT_THRESHOLD = 32;
+};
+
 struct PriceLevel {
   Side side_{Side::INVALID};
   Price price_{INVALID_PRICE};
-  Order *headOrder_{};
+  OrderQueue orders{5000000};
   PriceLevel *prev_{};
   PriceLevel *next_{};
 
   constexpr PriceLevel() noexcept = default;
 
-  constexpr PriceLevel(Side side, Price price, Order *headOrder_) noexcept
-      : side_{side}, price_{price}, headOrder_{headOrder_} {
+  constexpr PriceLevel(Side side, Price price) noexcept
+      : side_{side}, price_{price} {
     prev_ = next_ = this;
   }
 
@@ -64,12 +146,10 @@ struct PriceLevel {
   }
 
   auto toString() const noexcept {
-    return std::format(
-        "PriceLevel[side:{} price:{} first_me_order:{} prev:{} next:{}]",
-        sideToString(side_), priceToString(price_),
-        headOrder_ ? headOrder_->toString() : "null",
-        priceToString(prev_ ? prev_->price_ : INVALID_PRICE),
-        priceToString(next_ ? next_->price_ : INVALID_PRICE));
+    return std::format("PriceLevel[side:{} price:{} prev:{} next:{}]",
+                       sideToString(side_), priceToString(price_),
+                       priceToString(prev_ ? prev_->price_ : INVALID_PRICE),
+                       priceToString(next_ ? next_->price_ : INVALID_PRICE));
   }
 };
 

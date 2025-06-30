@@ -68,8 +68,8 @@ TEST_F(OrderBookTest, AddMultipleOrdersSamePriceLevel) {
   AddOrderAndVerify(1, 101, 101, BUY, 100, 30);
   const models::Order *order1 = getOrderBook()->getOrder(1, 100);
   const models::Order *order2 = getOrderBook()->getOrder(1, 101);
-  EXPECT_EQ(order1->next_, order2);
-  EXPECT_EQ(order2->prev_, order1);
+  EXPECT_EQ(order1->position_.logical_index, 0);
+  EXPECT_EQ(order2->position_.logical_index, 1);
 }
 
 TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
@@ -102,15 +102,7 @@ TEST_F(OrderBookTest, RemoveOrderFromMultiOrderPriceLevel) {
   const models::Order *order2 = getOrderBook()->getOrder(1, 101);
   ASSERT_NE(order2, nullptr);
   EXPECT_EQ(order2->qty_, 30);
-  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->headOrder_, order2);
-}
-
-TEST_F(OrderBookTest, ModifyOrderQuantity) {
-  AddOrderAndVerify(1, 100, 100, BUY, 100, 50);
-  getOrderBook()->modifyOrder(1, 100, 75);
-  const models::Order *order = getOrderBook()->getOrder(1, 100);
-  ASSERT_NE(order, nullptr);
-  EXPECT_EQ(order->qty_, 75);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders.front()->orderId_, order2->clientOrderId_);
 }
 
 TEST_F(OrderBookTest, MatchSingleFullFill) {
@@ -193,13 +185,11 @@ TEST_F(OrderBookTest, MatchMaxEventsLimit) {
 }
 
 TEST_F(OrderBookTest, ComplexScenario) {
-  AddOrderAndVerify(1, 100, 100, SELL, 100, 20);
+  AddOrderAndVerify(1, 100, 100, SELL, 100, 25);
   AddOrderAndVerify(1, 101, 101, SELL, 101, 30);
   AddOrderAndVerify(1, 102, 102, SELL, 99, 40);
   AddOrderAndVerify(2, 200, 200, BUY, 98, 50);
   AddOrderAndVerify(2, 201, 201, BUY, 97, 60);
-
-  getOrderBook()->modifyOrder(1, 100, 25);
 
   auto result = getOrderBook()->match(3, 300, BUY, 100, 100);
   ASSERT_EQ(result.matches_.size(), 2);

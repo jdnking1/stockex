@@ -50,11 +50,6 @@ public:
     return clientOrders_[clientId][orderId];
   }
 
-  auto modifyOrder(models::ClientId clientId, models::OrderId orderId,
-                   models::Quantity qty) noexcept -> void {
-    clientOrders_[clientId][orderId]->qty_ = qty;
-  };
-
   auto getPriceLevel(models::Price price) const noexcept
       -> models::PriceLevel * {
     return priceLevels_[getPriceIndex(price)];

@@ -4,6 +4,7 @@
 
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
+#include "models/order.hpp"
 
 namespace stockex::engine {
 auto OrderBook::addOrder(models::ClientId clientId,
@@ -12,16 +13,18 @@ auto OrderBook::addOrder(models::ClientId clientId,
                          models::Price price,
                          models::Quantity quantity) noexcept -> void {
   auto priceLevel = getPriceLevel(price);
-  auto order = orderAllocator_.alloc(instrument_, clientId, clientOrderId,
-                                     marketOrderId, side, price, quantity);
+  models::Order *order = nullptr;
   if (!priceLevel) {
+    order = orderAllocator_.alloc(models::QueuePosition{}, instrument_,
+                                  clientId, clientOrderId, marketOrderId, side,
+                                  price, quantity);
     addPriceLevel(order);
   } else {
-    auto *tailOrder = priceLevel->headOrder_->prev_;
-    tailOrder->next_ = order;
-    order->prev_ = tailOrder;
-    order->next_ = priceLevel->headOrder_;
-    priceLevel->headOrder_->prev_ = order;
+    auto position =
+        priceLevel->orders.push({clientOrderId, quantity, clientId});
+    order =
+        orderAllocator_.alloc(position, instrument_, clientId, clientOrderId,
+                              marketOrderId, side, price, quantity);
   }
   clientOrders_[clientId][clientOrderId] = order;
 }
@@ -30,25 +33,19 @@ auto OrderBook::removeOrder(models::ClientId clientId,
                             models::OrderId orderId) noexcept -> void {
   auto order = clientOrders_[clientId][orderId];
   auto priceLevel = getPriceLevel(order->price_);
-  if (order->prev_ == order) {
-    removePriceLevel(order->side_, order->price_);
-  } else {
-    auto prevOrder = order->prev_;
-    auto nextOrder = order->next_;
-    prevOrder->next_ = nextOrder;
-    nextOrder->prev_ = prevOrder;
-    if (priceLevel->headOrder_ == order) {
-      priceLevel->headOrder_ = nextOrder;
-    }
-    order->prev_ = order->next_ = nullptr;
-  }
+  priceLevel->orders.remove(order->position_);
   clientOrders_[clientId][orderId] = nullptr;
   orderAllocator_.free(order);
+  if (priceLevel->orders.empty()) {
+    removePriceLevel(order->side_, order->price_);
+  }
 }
 
 auto OrderBook::addPriceLevel(models::Order *order) noexcept -> void {
-  auto priceLevel =
-      priceLevelAllocator_.alloc(order->side_, order->price_, order);
+  auto priceLevel = priceLevelAllocator_.alloc(order->side_, order->price_);
+  auto position = priceLevel->orders.push(
+      {order->clientOrderId_, order->qty_, order->clientId_});
+  order->position_ = position;
   auto priceLevelIndex = getPriceIndex(priceLevel->price_);
   priceLevels_[priceLevelIndex] = priceLevel;
   auto *&bestPriceLevel =
@@ -118,22 +115,22 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
   while (remainingQuantity && bestPriceLevel &&
          bestPriceLevel->isMatchable(price) &&
          matchCount < models::MAX_MATCH_EVENTS) {
-    auto matchedOrder = bestPriceLevel->headOrder_;
-    auto matchedQty = std::min(remainingQuantity, matchedOrder->qty_);
+    auto matchedOrder = bestPriceLevel->orders.front();
+    auto matchedQty = std::min(remainingQuantity, matchedOrder->qty);
     remainingQuantity -= matchedQty;
-    matchedOrder->qty_ -= matchedQty;
+    matchedOrder->qty -= matchedQty;
     matchResults_[matchCount] = {orderId,
-                                 matchedOrder->clientOrderId_,
-                                 matchedOrder->price_,
+                                 matchedOrder->orderId_,
+                                 bestPriceLevel->price_,
                                  matchedQty,
-                                 matchedOrder->qty_,
+                                 matchedOrder->qty,
                                  clientId,
                                  matchedOrder->clientId_,
                                  side,
-                                 matchedOrder->side_};
+                                 bestPriceLevel->side_};
 
-    if (matchedOrder->qty_ == 0) {
-      removeOrder(matchedOrder->clientId_, matchedOrder->clientOrderId_);
+    if (matchedOrder->qty == 0) {
+      removeOrder(matchedOrder->clientId_, matchedOrder->orderId_);
     }
     matchCount++;
   }
