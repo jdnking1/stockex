@@ -22,13 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         build_type: [Release]
-        include:
-          - os: ubuntu-latest
-            c_compiler: gcc-14
-            cpp_compiler: g++-14
-          - os: ubuntu-latest
-            c_compiler: clang-18
-            cpp_compiler: clang++-18
+        c_compiler: [gcc-14, clang-18]
+        cpp_compiler: [g++-14, clang++-18]
 
     steps:
     - name: Checkout repository
