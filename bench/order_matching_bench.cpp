@@ -80,10 +80,10 @@ void populateBook(stockex::engine::OrderBook &book, TestType type,
   std::mt19937 rng(42);
   for (OrderId i = 0; i < numOrders; ++i) {
     int price = generatePrice(type, i, basePrice, rng);
-    book.addOrder(1, i, i, BUY, static_cast<Price>(price), static_cast<Quantity>(orderQty));
+    book.addOrder(1, i, i, BUY, static_cast<Price>(price),
+                  static_cast<Quantity>(orderQty));
   }
 }
-
 
 void printMetrics(std::vector<double> &latencies, size_t totalMatches) {
   std::ranges::sort(latencies);
@@ -113,8 +113,8 @@ void printMetrics(std::vector<double> &latencies, size_t totalMatches) {
 int main(int argc, char **argv) {
   if (argc < 2 || argc > 3) {
     std::cerr << "Usage: " << argv[0]
-              << " [flat|nonlinear|fanout|skewed|layered|randomwalk|crossed|"
-                 "burst|thinheavy] [--perf=record|--perf=stat]\n";
+              << " [flat|nonlinear|fanout|skewed|layered|randomwalk|]"
+                 "[--perf = record | --perf = stat]\n ";
     return 1;
   }
 
@@ -147,7 +147,8 @@ int main(int argc, char **argv) {
   for (int i = 0; i < numOrders; ++i) {
     int price = generatePrice(type, i, basePrice, rng);
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = book->match(2, 1, SELL, static_cast<Price>(price), static_cast<Quantity>(matchQty));
+    auto result = book->match(2, 1, SELL, static_cast<Price>(price),
+                              static_cast<Quantity>(matchQty));
     auto end = std::chrono::high_resolution_clock::now();
     if (!result.matches_.empty()) {
       std::chrono::duration<double, std::micro> duration = end - start;
