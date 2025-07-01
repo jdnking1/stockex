@@ -22,12 +22,12 @@ protected:
     auto &orderInfo = book_->getOrder(clientId, clientOrderId);
     const auto *priceLevel = book_->getPriceLevel(price);
     auto bOrder = priceLevel->orders.last();
-    EXPECT_EQ(bOrder.clientId_, clientId);
-    EXPECT_EQ(bOrder.orderId_, clientOrderId);
+    EXPECT_EQ(bOrder->clientId_, clientId);
+    EXPECT_EQ(bOrder->orderId_, clientOrderId);
     EXPECT_EQ(orderInfo.marketOrderId_, marketOrderId);
     EXPECT_EQ(priceLevel->side_, side);
     EXPECT_EQ(orderInfo.price_, price);
-    EXPECT_EQ(bOrder.qty_, qty);
+    EXPECT_EQ(bOrder->qty_, qty);
   }
 
   auto VerifyMatchResult(const MatchResult &result,
@@ -70,8 +70,8 @@ TEST_F(OrderBookTest, AddMultipleOrdersSamePriceLevel) {
   AddOrderAndVerify(1, 101, 101, BUY, 100, 30);
   const auto &order1 = getOrderBook()->getOrder(1, 100);
   const auto &order2 = getOrderBook()->getOrder(1, 101);
-  EXPECT_EQ(order1.position_.logicalIndex_, 0);
-  EXPECT_EQ(order2.position_.logicalIndex_, 1);
+  EXPECT_EQ(order1.position_, 0);
+  EXPECT_EQ(order2.position_, 1);
 }
 
 TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
@@ -123,7 +123,7 @@ TEST_F(OrderBookTest, MatchSinglePartialFillResting) {
   EXPECT_EQ(result.remainingQuantity_, 0);
   const auto *priceLevel = getOrderBook()->getPriceLevel(100);
   ASSERT_NE(priceLevel, nullptr);
-  EXPECT_EQ(priceLevel->orders.front().qty_, 20);
+  EXPECT_EQ(priceLevel->orders.front()->qty_, 20);
 }
 
 TEST_F(OrderBookTest, MatchMultipleOrdersSamePriceLevel) {
@@ -156,7 +156,7 @@ TEST_F(OrderBookTest, NoMatchPriceMismatch) {
   EXPECT_EQ(result.remainingQuantity_, 50);
   const auto *priceLevel = getOrderBook()->getPriceLevel(101);
   ASSERT_NE(priceLevel, nullptr);
-  EXPECT_EQ(priceLevel->orders.front().qty_, 50);
+  EXPECT_EQ(priceLevel->orders.front()->qty_, 50);
 }
 
 TEST_F(OrderBookTest, MatchMaxEventsLimit) {
@@ -187,7 +187,7 @@ TEST_F(OrderBookTest, ComplexScenario) {
   EXPECT_EQ(getOrderBook()->getPriceLevel(99), nullptr);
   const auto *priceLevel = getOrderBook()->getPriceLevel(101);
   ASSERT_NE(priceLevel, nullptr);
-  EXPECT_EQ(priceLevel->orders.front().qty_, 30);
+  EXPECT_EQ(priceLevel->orders.front()->qty_, 30);
 }
 
 TEST_F(OrderBookTest, BenchmarkAddOrder) {
