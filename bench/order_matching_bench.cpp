@@ -44,7 +44,7 @@ TestType parseTestType(const std::string &arg) {
   exit(1);
 }
 
-int generatePrice(TestType type, unsigned long i, int basePrice,
+Price generatePrice(TestType type, OrderId i, Price basePrice,
                   std::mt19937 &rng) {
   using enum TestType;
   switch (type) {
@@ -59,14 +59,15 @@ int generatePrice(TestType type, unsigned long i, int basePrice,
   case Skewed:
     return basePrice + (i % 20);
   case Layered: {
-    int level = (i % 5) * 5;
+    Price level = (i % 5) * 5;
     return basePrice + level;
   }
   case RandomWalk: {
-    static int lastPrice = basePrice;
+    static Price lastPrice = basePrice;
     int delta = (rng() % 3) - 1;
-    lastPrice = std::clamp(lastPrice + delta, 0,
+    auto result = std::clamp(lastPrice + delta, 0,
                            static_cast<int>(MAX_PRICE_LEVELS - 1));
+    lastPrice = static_cast<Price>(result);
     return lastPrice;
   }
   }
@@ -74,14 +75,13 @@ int generatePrice(TestType type, unsigned long i, int basePrice,
 }
 
 void populateBook(stockex::engine::OrderBook &book, TestType type,
-                  int basePrice, size_t numOrders, int orderQty) {
+                  Price basePrice, size_t numOrders, Quantity orderQty) {
   using enum Side;
   using enum TestType;
   std::mt19937 rng(42);
   for (OrderId i = 0; i < numOrders; ++i) {
-    int price = generatePrice(type, i, basePrice, rng);
-    book.addOrder(1, i, i, BUY, static_cast<Price>(price),
-                  static_cast<Quantity>(orderQty));
+    auto price = generatePrice(type, i, basePrice, rng);
+    book.addOrder(1, i, i, BUY, price, orderQty);
   }
 }
 
@@ -125,10 +125,10 @@ int main(int argc, char **argv) {
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
 
   const auto type = parseTestType(testName);
-  const auto basePrice = 100;
   const auto numOrders = 15'000'000;
-  const auto orderQty = (type == TestType::Fanout) ? 10 : 50;
-  const auto matchQty = (type == TestType::Fanout) ? 10'000 : 1'000;
+  const Price basePrice = 100;
+  const Quantity orderQty = (type == TestType::Fanout) ? 10 : 50;
+  const Quantity matchQty = (type == TestType::Fanout) ? 10'000 : 1'000;
 
   std::print("--- Book pre-fill (untimed) ---\n");
   populateBook(*book, type, basePrice, numOrders, orderQty);
@@ -145,10 +145,10 @@ int main(int argc, char **argv) {
   std::mt19937 rng(42);
 
   for (int i = 0; i < numOrders; ++i) {
-    int price = generatePrice(type, i, basePrice, rng);
+    auto price = generatePrice(type, i, basePrice, rng);
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = book->match(2, 1, SELL, static_cast<Price>(price),
-                              static_cast<Quantity>(matchQty));
+    auto result = book->match(2, 1, SELL, price,
+                              matchQty);
     auto end = std::chrono::high_resolution_clock::now();
     if (!result.matches_.empty()) {
       std::chrono::duration<double, std::micro> duration = end - start;

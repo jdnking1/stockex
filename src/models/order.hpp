@@ -49,7 +49,7 @@ struct Order {
 struct PriceLevel {
   Side side_{Side::INVALID};
   Price price_{INVALID_PRICE};
-  OrderQueue orders{5000000};
+  OrderQueue orders{3'000'000};
   PriceLevel *prev_{};
   PriceLevel *next_{};
 
