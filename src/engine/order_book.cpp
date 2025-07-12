@@ -5,6 +5,7 @@
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
 #include "models/order.hpp"
+#include "models/order_queue.hpp"
 
 namespace stockex::engine {
 auto OrderBook::addOrder(models::ClientId clientId,
@@ -13,21 +14,21 @@ auto OrderBook::addOrder(models::ClientId clientId,
                          models::Price price,
                          models::Quantity quantity) noexcept -> void {
   auto priceLevel = getPriceLevel(price);
-  models::QueuePosition position{};
+  models::QueueHandle queueHandle;
 
   if (!priceLevel) {
     priceLevel = addPriceLevel(side, price);
   }
 
-  position = priceLevel->orders.push({clientOrderId, quantity, clientId});
-  clientOrders_[clientId][clientOrderId] = {position, marketOrderId, price};
+  queueHandle = priceLevel->orders.push({clientOrderId, quantity, clientId});
+  clientOrders_[clientId][clientOrderId] = {queueHandle, marketOrderId, price};
 }
 
 auto OrderBook::removeOrder(models::ClientId clientId,
                             models::OrderId orderId) noexcept -> void {
   auto order = clientOrders_[clientId][orderId];
   auto priceLevel = getPriceLevel(order.price_);
-  priceLevel->orders.remove(order.position_);
+  priceLevel->orders.remove(order.queueHandle_);
   if (priceLevel->orders.empty()) {
     removePriceLevel(priceLevel);
   }
@@ -35,7 +36,7 @@ auto OrderBook::removeOrder(models::ClientId clientId,
 
 auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
     -> models::PriceLevel * {
-  auto priceLevel = priceLevelAllocator_.alloc(side, price);
+  auto priceLevel = priceLevelAllocator_.alloc(side, price, chunkAlloc);
   auto priceLevelIndex = getPriceIndex(price);
   priceLevels_[priceLevelIndex] = priceLevel;
   auto *&bestPriceLevel =

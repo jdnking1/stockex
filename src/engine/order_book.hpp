@@ -5,6 +5,7 @@
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
 #include "models/order.hpp"
+#include "models/order_queue.hpp"
 #include "utils/memory_pool.hpp"
 
 namespace stockex::engine {
@@ -82,6 +83,7 @@ private:
   std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
   utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
       models::MAX_PRICE_LEVELS};
+  models::OrderQueue<>::Allocator chunkAlloc{7000};
   models::InstrumentId instrument_{};
 
   auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {

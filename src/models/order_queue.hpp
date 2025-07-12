@@ -1,128 +1,159 @@
 #pragma once
 
-#include <algorithm>
-#include <cstdint>
-#include <iostream>
-#include <vector>
+#include <array>
 
 #include "basic_types.hpp"
+#include "models/constants.hpp"
+#include "utils/memory_pool.hpp"
 
 namespace stockex::models {
-
-using QueueSize = uint32_t;
-using QueuePosition = uint32_t;
 
 struct BasicOrder {
   OrderId orderId_{};
   Quantity qty_{};
   ClientId clientId_{};
   bool deleted_{false};
-
-  friend bool operator==(const BasicOrder &lhs, const BasicOrder &rhs) {
-    return lhs.orderId_ == rhs.orderId_ && lhs.qty_ == rhs.qty_ &&
-           lhs.clientId_ == rhs.clientId_;
-  }
-
-  friend std::ostream &operator<<(std::ostream &os, const BasicOrder &order) {
-    os << "Order{id: " << order.orderId_ << ", qty: " << order.qty_ << "}";
-    return os;
-  }
 };
 
-class OrderQueue {
-private:
-  void compact() noexcept {
-    if (head_ < COMPACT_THRESHOLD) {
-      return;
-    }
+template <std::size_t ChunkSize = QUEUE_CHUNK_SIZE> class OrderQueue;
 
-    auto remaining = tail_ - head_;
-    if (remaining > 0) {
-      std::move(orders_.begin() + head_, orders_.begin() + tail_,
-                orders_.begin());
-    }
+template <std::size_t ChunkSize> struct OrderHandle {
+  typename OrderQueue<ChunkSize>::Chunk *chunk_{};
+  std::size_t index_{};
+};
 
-    tail_ = remaining;
-    orders_.resize(tail_);
-
-    offset_ += head_;
-    head_ = 0;
-  }
-
-  void advanceHead() noexcept {
-    compact();
-    while (head_ < tail_ && orders_[head_].deleted_) {
-      head_++;
-    }
-  }
-
+template <std::size_t ChunkSize> class OrderQueue {
 public:
-  constexpr explicit OrderQueue(QueueSize initialCapacity,
-                                QueueSize compactThreshold = 750000)
-      : COMPACT_THRESHOLD(compactThreshold) {
-    orders_.reserve(initialCapacity);
+  struct Chunk {
+    std::array<BasicOrder, ChunkSize> orders{};
+    std::size_t count{};
+    Chunk *next{};
+    Chunk *prev{};
+  };
+
+  using Handle = OrderHandle<ChunkSize>;
+  using Allocator = utils::MemoryPool<Chunk>;
+
+  explicit OrderQueue(Allocator &allocator) : allocator_{allocator} {
+    allocateNewChunk();
   }
 
-  auto push(BasicOrder order) noexcept -> QueuePosition {
-    orders_.push_back(order);
-    tail_++;
-    size_++;
-    return offset_ + tail_ - 1;
-  }
-
-  auto remove(QueuePosition pos) noexcept {
-    if (pos < offset_)
-      return;
-    auto index = pos - offset_;
-    if (index < tail_ && !orders_[index].deleted_) {
-      orders_[index].deleted_ = true;
-      size_--;
+  ~OrderQueue() {
+    Chunk *current = headChunk_;
+    while (current != nullptr) {
+      Chunk *next = current->next;
+      allocator_.free(current);
+      current = next;
     }
   }
 
-  auto pop() noexcept {
+  OrderQueue(const OrderQueue &) = delete;
+  OrderQueue &operator=(const OrderQueue &) = delete;
+  OrderQueue(OrderQueue &&) = delete;
+  OrderQueue &operator=(OrderQueue &&) = delete;
+
+  auto push(BasicOrder order) -> Handle {
+    if (tailChunk_->count >= ChunkSize) {
+      allocateNewChunk();
+    }
+
+    std::size_t index = tailChunk_->count;
+    tailChunk_->orders[index] = order;
+    tailChunk_->count++;
+    totalSize_++;
+
+    return Handle{tailChunk_, index};
+  }
+
+  auto remove(Handle handle) noexcept -> void {
+    if (handle.chunk_ && !handle.chunk_->orders[handle.index_].deleted_) {
+      handle.chunk_->orders[handle.index_].deleted_ = true;
+      totalSize_--;
+    }
+  }
+
+  auto pop() noexcept -> void {
     advanceHead();
     if (empty())
       return;
-    if (head_ < tail_) {
-      orders_[head_].deleted_ = true;
-      size_--;
-    }
+    headChunk_->orders[headOrderIndex_].deleted_ = true;
+    totalSize_--;
   }
 
-  auto front() noexcept -> BasicOrder * {
+  inline auto front() noexcept -> BasicOrder * {
     advanceHead();
-    return empty() ? nullptr : &orders_[head_];
-  }
-
-  auto front() const noexcept -> const BasicOrder * {
-    QueueSize current_head = head_;
-    while (current_head < tail_ && orders_[current_head].deleted_) {
-      current_head++;
-    }
-    return current_head >= tail_ ? nullptr : &orders_[current_head];
+    return empty() ? nullptr : &headChunk_->orders[headOrderIndex_];
   }
 
   auto last() const noexcept -> const BasicOrder * {
-    auto current_pos = tail_;
-    while (current_pos > head_) {
-      --current_pos;
-      if (!orders_[current_pos].deleted_) {
-        return &orders_[current_pos];
+    if (empty()) {
+      return nullptr;
+    }
+
+    Chunk *currentChunk = tailChunk_;
+    auto currentIndex = currentChunk->count - 1;
+
+    while (currentChunk != nullptr) {
+      while (currentIndex >= 0) {
+        if (!currentChunk->orders[currentIndex].deleted_) {
+          return &currentChunk->orders[currentIndex];
+        }
+        currentIndex--;
+      }
+      currentChunk = currentChunk->prev;
+      if (currentChunk != nullptr) {
+        currentIndex = static_cast<long>(currentChunk->count) - 1;
       }
     }
     return nullptr;
   }
 
-  auto empty() const noexcept -> bool { return size_ == 0; }
-  auto size() const noexcept -> size_t { return size_; }
+  auto empty() const noexcept -> bool { return totalSize_ == 0; }
+  auto size() const noexcept -> std::size_t { return totalSize_; }
 
 private:
-  std::vector<BasicOrder> orders_{};
-  QueueSize tail_{0};
-  QueueSize head_{0};
-  QueueSize offset_{0};
-  QueueSize size_{0};
-  const QueueSize COMPACT_THRESHOLD;
+  auto allocateNewChunk() noexcept -> void {
+    auto *newChunk = allocator_.alloc();
+    if (headChunk_ == nullptr) {
+      headChunk_ = tailChunk_ = newChunk;
+    } else {
+      tailChunk_->next = newChunk;
+      newChunk->prev = tailChunk_;
+      tailChunk_ = newChunk;
+    }
+  }
+
+  auto advanceHead() noexcept -> void {
+    if (empty())
+      return;
+
+    while (headChunk_ != nullptr) {
+      while (headOrderIndex_ < headChunk_->count) {
+        if (!headChunk_->orders[headOrderIndex_].deleted_) {
+          return;
+        }
+        headOrderIndex_++;
+      }
+
+      if (headChunk_ == tailChunk_) {
+        allocator_.free(headChunk_);
+        headChunk_ = nullptr;
+        tailChunk_ = nullptr;
+        headOrderIndex_ = 0;
+        return;
+      }
+
+      Chunk *oldHead = headChunk_;
+      headChunk_ = headChunk_->next;
+      headOrderIndex_ = 0;
+      allocator_.free(oldHead);
+    }
+  }
+
+  Allocator &allocator_{};
+  Chunk *headChunk_{};
+  Chunk *tailChunk_{};
+  std::size_t headOrderIndex_{};
+  std::size_t totalSize_{};
 };
 } // namespace stockex::models

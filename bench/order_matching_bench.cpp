@@ -92,8 +92,10 @@ void printMetrics(std::vector<double> &latencies, size_t totalMatches) {
   auto minLat = latencies.front();
   auto maxLat = latencies.back();
   auto avg = sum / size;
-  auto p99index = static_cast<int>(size * 0.99);
+  auto p99index = static_cast<std::size_t>(size * 0.99);
+  auto p999index = static_cast<std::size_t>(size * 0.999);
   auto p99 = latencies[p99index];
+  auto p999 = latencies[p999index];
   auto var = std::accumulate(
       latencies.begin(), latencies.end(), 0.0,
       [avg](double acc, double v) { return acc + (v - avg) * (v - avg); });
@@ -104,6 +106,7 @@ void printMetrics(std::vector<double> &latencies, size_t totalMatches) {
   std::print("Total matches: {}\n", totalMatches);
   std::print("Average latency: {} us\n", avg);
   std::print("99th percentile latency: {} us\n", p99);
+  std::print("99.9th percentile latency: {} us\n", p999);
   std::print("Min latency: {} us\n", minLat);
   std::print("Max latency: {} us\n", maxLat);
   std::print("Standard deviation: {} us\n", stddev);
