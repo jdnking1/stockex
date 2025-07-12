@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <memory>
 
@@ -71,8 +72,8 @@ TEST_F(OrderBookTest, AddMultipleOrdersSamePriceLevel) {
   AddOrderAndVerify(1, 101, 101, BUY, 100, 30);
   const auto &order1 = getOrderBook()->getOrder(1, 100);
   const auto &order2 = getOrderBook()->getOrder(1, 101);
-  EXPECT_EQ(order1.position_, 0);
-  EXPECT_EQ(order2.position_, 1);
+  EXPECT_EQ(order1.queueHandle_.index_, 0);
+  EXPECT_EQ(order2.queueHandle_.index_, 1);
 }
 
 TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
@@ -122,7 +123,7 @@ TEST_F(OrderBookTest, MatchSinglePartialFillResting) {
   ASSERT_EQ(result.matches_.size(), 1);
   VerifyMatchResult(result.matches_[0], 101, 100, 100, 30, 20, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 0);
-  const auto *priceLevel = getOrderBook()->getPriceLevel(100);
+  auto *priceLevel = getOrderBook()->getPriceLevel(100);
   ASSERT_NE(priceLevel, nullptr);
   EXPECT_EQ(priceLevel->orders.front()->qty_, 20);
 }
@@ -155,7 +156,7 @@ TEST_F(OrderBookTest, NoMatchPriceMismatch) {
   auto result = getOrderBook()->match(2, 101, BUY, 100, 50);
   EXPECT_EQ(result.matches_.size(), 0);
   EXPECT_EQ(result.remainingQuantity_, 50);
-  const auto *priceLevel = getOrderBook()->getPriceLevel(101);
+  auto *priceLevel = getOrderBook()->getPriceLevel(101);
   ASSERT_NE(priceLevel, nullptr);
   EXPECT_EQ(priceLevel->orders.front()->qty_, 50);
 }
@@ -186,7 +187,7 @@ TEST_F(OrderBookTest, ComplexScenario) {
 
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
   EXPECT_EQ(getOrderBook()->getPriceLevel(99), nullptr);
-  const auto *priceLevel = getOrderBook()->getPriceLevel(101);
+  auto *priceLevel = getOrderBook()->getPriceLevel(101);
   ASSERT_NE(priceLevel, nullptr);
   EXPECT_EQ(priceLevel->orders.front()->qty_, 30);
 }

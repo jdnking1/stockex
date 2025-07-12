@@ -10,14 +10,17 @@
 
 namespace stockex::models {
 
+using DefaultOrderQueue = OrderQueue<>;
+using QueueHandle = typename DefaultOrderQueue::Handle;
+
 struct OrderInfo {
-  models::QueuePosition position_{};
+  QueueHandle queueHandle_{};
   models::OrderId marketOrderId_{};
   models::Price price_{};
 };
 
 struct Order {
-  QueuePosition position_{};
+  QueueHandle position_{};
   OrderId clientOrderId_{INVALID_ORDER_ID};
   OrderId marketOrderId_{INVALID_ORDER_ID};
   Price price_{INVALID_PRICE};
@@ -28,7 +31,7 @@ struct Order {
 
   constexpr Order() noexcept = default;
 
-  constexpr Order(QueuePosition position, InstrumentId instrumentId,
+  constexpr Order(QueueHandle position, InstrumentId instrumentId,
                   ClientId clientId, OrderId clientOrderId,
                   OrderId marketOrderId, Side side, Price price,
                   Quantity qty) noexcept
@@ -49,14 +52,12 @@ struct Order {
 struct PriceLevel {
   Side side_{Side::INVALID};
   Price price_{INVALID_PRICE};
-  OrderQueue orders{3'000'000};
+  DefaultOrderQueue orders;
   PriceLevel *prev_{};
   PriceLevel *next_{};
 
-  constexpr PriceLevel() noexcept = default;
-
-  constexpr PriceLevel(Side side, Price price) noexcept
-      : side_{side}, price_{price} {
+  PriceLevel(Side side, Price price, DefaultOrderQueue::Allocator &allocator) noexcept
+      : side_{side}, price_{price}, orders{allocator} {
     prev_ = next_ = this;
   }
 

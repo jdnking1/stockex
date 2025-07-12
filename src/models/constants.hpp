@@ -22,4 +22,6 @@ constexpr std::size_t MAX_NUM_ORDERS = 15'000'000;
 constexpr std::size_t MAX_PRICE_LEVELS = 256;
 
 constexpr std::size_t MAX_MATCH_EVENTS = 1000;
+
+constexpr std::size_t QUEUE_CHUNK_SIZE = 4864;
 } // namespace stockex::models

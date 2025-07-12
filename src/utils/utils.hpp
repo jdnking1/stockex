@@ -2,7 +2,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <print>
 #include <string_view>
 
 namespace stockex::utils {
