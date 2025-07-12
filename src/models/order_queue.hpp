@@ -57,7 +57,7 @@ public:
       allocateNewChunk();
     }
 
-    std::size_t index = tailChunk_->count;
+    const std::size_t index = tailChunk_->count;
     tailChunk_->orders[index] = order;
     tailChunk_->count++;
     totalSize_++;
@@ -80,20 +80,43 @@ public:
     totalSize_--;
   }
 
-  inline auto front() noexcept -> BasicOrder * {
+  [[nodiscard]] auto front() noexcept -> BasicOrder * {
     advanceHead();
     return empty() ? nullptr : &headChunk_->orders[headOrderIndex_];
   }
 
-  auto last() const noexcept -> const BasicOrder * {
+  [[nodiscard]] auto front() const noexcept -> const BasicOrder * {
     if (empty()) {
       return nullptr;
     }
+    const auto *currentChunk = headChunk_;
+    auto currentIndex = headOrderIndex_;
+    while (currentChunk) {
+      while (currentIndex < currentChunk->count) {
+        if (!currentChunk->orders[currentIndex].deleted_) {
+          return &currentChunk->orders[currentIndex];
+        }
+        currentIndex++;
+      }
+      currentChunk = currentChunk->next;
+      currentIndex = 0;
+    }
+    return nullptr;
+  }
 
-    Chunk *currentChunk = tailChunk_;
-    auto currentIndex = currentChunk->count - 1;
+  [[nodiscard]] auto last() noexcept -> BasicOrder * {
+    return const_cast<BasicOrder *>(
+        static_cast<const OrderQueue *>(this)->last());
+  }
 
-    while (currentChunk != nullptr) {
+  [[nodiscard]] auto last() const noexcept -> const BasicOrder * {
+    if (empty()) {
+      return nullptr;
+    }
+    const Chunk *currentChunk = tailChunk_;
+    auto currentIndex = static_cast<long>(currentChunk->count) - 1;
+
+    while (currentChunk) {
       while (currentIndex >= 0) {
         if (!currentChunk->orders[currentIndex].deleted_) {
           return &currentChunk->orders[currentIndex];
@@ -101,15 +124,15 @@ public:
         currentIndex--;
       }
       currentChunk = currentChunk->prev;
-      if (currentChunk != nullptr) {
+      if (currentChunk) {
         currentIndex = static_cast<long>(currentChunk->count) - 1;
       }
     }
     return nullptr;
   }
 
-  auto empty() const noexcept -> bool { return totalSize_ == 0; }
-  auto size() const noexcept -> std::size_t { return totalSize_; }
+  [[nodiscard]] auto empty() const noexcept -> bool { return totalSize_ == 0; }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return totalSize_; }
 
 private:
   auto allocateNewChunk() noexcept -> void {
@@ -143,7 +166,7 @@ private:
         return;
       }
 
-      Chunk *oldHead = headChunk_;
+      auto *oldHead = headChunk_;
       headChunk_ = headChunk_->next;
       headOrderIndex_ = 0;
       allocator_.free(oldHead);

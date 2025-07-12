@@ -1,13 +1,12 @@
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <ctime>
 #include <memory>
-#include <numeric>
 #include <print>
 #include <random>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 #include "bench_utils.hpp"
 #include "engine/order_book.hpp"
@@ -44,8 +43,9 @@ TestType parseTestType(const std::string &arg) {
   exit(1);
 }
 
+// Generates a price based on the test type
 Price generatePrice(TestType type, OrderId i, Price basePrice,
-                  std::mt19937 &rng) {
+                    std::mt19937 &rng) {
   using enum TestType;
   switch (type) {
   case Flat:
@@ -66,7 +66,7 @@ Price generatePrice(TestType type, OrderId i, Price basePrice,
     static Price lastPrice = basePrice;
     int delta = (rng() % 3) - 1;
     auto result = std::clamp(lastPrice + delta, 0,
-                           static_cast<int>(MAX_PRICE_LEVELS - 1));
+                             static_cast<int>(MAX_PRICE_LEVELS - 1));
     lastPrice = static_cast<Price>(result);
     return lastPrice;
   }
@@ -85,34 +85,6 @@ void populateBook(stockex::engine::OrderBook &book, TestType type,
   }
 }
 
-void printMetrics(std::vector<double> &latencies, size_t totalMatches) {
-  std::ranges::sort(latencies);
-  auto size = static_cast<double>(latencies.size());
-  auto sum = std::accumulate(latencies.begin(), latencies.end(), 0.0);
-  auto minLat = latencies.front();
-  auto maxLat = latencies.back();
-  auto avg = sum / size;
-  auto p99index = static_cast<std::size_t>(size * 0.99);
-  auto p999index = static_cast<std::size_t>(size * 0.999);
-  auto p99 = latencies[p99index];
-  auto p999 = latencies[p999index];
-  auto var = std::accumulate(
-      latencies.begin(), latencies.end(), 0.0,
-      [avg](double acc, double v) { return acc + (v - avg) * (v - avg); });
-  auto stddev = std::sqrt(var / size);
-  auto throughput = static_cast<double>(totalMatches) / (sum / 1'000'000.0);
-
-  std::print("Total time: {} us\n", sum);
-  std::print("Total matches: {}\n", totalMatches);
-  std::print("Average latency: {} us\n", avg);
-  std::print("99th percentile latency: {} us\n", p99);
-  std::print("99.9th percentile latency: {} us\n", p999);
-  std::print("Min latency: {} us\n", minLat);
-  std::print("Max latency: {} us\n", maxLat);
-  std::print("Standard deviation: {} us\n", stddev);
-  std::print("Throughput: {} matches/sec\n", throughput);
-}
-
 int main(int argc, char **argv) {
   if (argc < 2 || argc > 3) {
     std::cerr << "Usage: " << argv[0]
@@ -128,16 +100,16 @@ int main(int argc, char **argv) {
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
 
   const auto type = parseTestType(testName);
-  const auto numOrders = 15'000'000;
+  const auto numOrders = static_cast<int>(MAX_NUM_ORDERS);
   const Price basePrice = 100;
   const Quantity orderQty = (type == TestType::Fanout) ? 10 : 50;
   const Quantity matchQty = (type == TestType::Fanout) ? 10'000 : 1'000;
 
   std::print("--- Book pre-fill (untimed) ---\n");
   populateBook(*book, type, basePrice, numOrders, orderQty);
-
+  std::print("reserving\n");
   std::vector<double> latencies;
-  latencies.reserve(numOrders);
+  latencies.reserve(1250300);
 
   if (auto perfMode = parsePerfMode(argc, argv); perfMode != None) {
     runPerf(perfMode, testName);
@@ -150,8 +122,7 @@ int main(int argc, char **argv) {
   for (int i = 0; i < numOrders; ++i) {
     auto price = generatePrice(type, i, basePrice, rng);
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = book->match(2, 1, SELL, price,
-                              matchQty);
+    auto result = book->match(2, 1, SELL, price, matchQty);
     auto end = std::chrono::high_resolution_clock::now();
     if (!result.matches_.empty()) {
       std::chrono::duration<double, std::micro> duration = end - start;
@@ -161,5 +132,9 @@ int main(int argc, char **argv) {
   }
 
   printMetrics(latencies, totalMatches);
+
+  std::string latency_filename = "latencies_" + testName + ".txt";
+  saveLatenciesToFile(latencies, latency_filename);
+
   return 0;
 }

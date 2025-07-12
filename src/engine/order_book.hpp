@@ -1,11 +1,12 @@
 #pragma once
 
 #include <array>
+#include <span>
 
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
-#include "models/order.hpp"
 #include "models/order_queue.hpp"
+#include "models/price_level.hpp"
 #include "utils/memory_pool.hpp"
 
 namespace stockex::engine {
@@ -41,56 +42,67 @@ public:
   OrderBook &operator=(const OrderBook &) = delete;
   OrderBook &operator=(OrderBook &&) = delete;
 
-  auto getPriceIndex(models::Price price) const noexcept {
+  void addOrder(models::ClientId clientId, models::OrderId clientOrderId,
+                models::OrderId marketOrderId, models::Side side,
+                models::Price price, models::Quantity quantity) noexcept;
+
+  void removeOrder(models::ClientId clientId, models::OrderId orderId) noexcept;
+
+  [[nodiscard]] MatchResultSet match(models::ClientId clientId,
+                                     models::OrderId orderId, models::Side side,
+                                     models::Price price,
+                                     models::Quantity quantity) noexcept;
+
+  [[nodiscard]] auto getPriceIndex(models::Price price) const noexcept {
     return price % models::MAX_PRICE_LEVELS;
   }
 
-  auto getOrder(models::ClientId clientId,
-                models::OrderId orderId) const noexcept
+  [[nodiscard]] auto getOrder(models::ClientId clientId,
+                              models::OrderId orderId) const noexcept
       -> const models::OrderInfo & {
     return clientOrders_[clientId][orderId];
   }
 
-  auto getPriceLevel(models::Price price) const noexcept
+  [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
     return priceLevels_[getPriceIndex(price)];
   }
 
-  auto getPriceLevel(models::Price price) noexcept
-      ->  models::PriceLevel * {
+  [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
+      -> models::PriceLevel * {
     return priceLevels_[getPriceIndex(price)];
   }
 
-  auto addOrder(models::ClientId, models::OrderId, models::OrderId,
-                models::Side, models::Price, models::Quantity) noexcept -> void;
-
-  auto removeOrder(models::ClientId, models::OrderId) noexcept -> void;
-
+private:
   auto addPriceLevel(models::Side side, models::Price price) noexcept
       -> models::PriceLevel *;
 
   auto removePriceLevel(models::PriceLevel *priceLevel) noexcept -> void;
 
-  auto match(models::ClientId clientId, models::OrderId orderId,
-             models::Side side, models::Price price,
-             models::Quantity quantity) noexcept -> MatchResultSet;
-
-private:
-  models::PriceLevel *bestBid_{};
-  models::PriceLevel *bestAsk_{};
-  models::PriceLevelMap priceLevels_{};
-  models::ClientOrderMap clientOrders_{};
-  std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
-  utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
-      models::MAX_PRICE_LEVELS};
-  models::OrderQueue<>::Allocator chunkAlloc{7000};
-  models::InstrumentId instrument_{};
-
   auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {
-    priceLevel->orders.pop();
-    if (priceLevel->orders.empty()) {
+    priceLevel->popFrontOrder();
+    if (priceLevel->isEmpty()) {
       removePriceLevel(priceLevel);
     }
   }
+
+  auto insertPriceLevelBefore(models::PriceLevel *current,
+                              models::PriceLevel *newPriceLevel) noexcept
+      -> void;
+
+  models::PriceLevel *bestBid_{};
+  models::PriceLevel *bestAsk_{};
+
+  models::PriceLevelMap priceLevels_{};
+
+  models::ClientOrderMap clientOrders_{};
+
+  std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
+
+  utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
+      models::MAX_PRICE_LEVELS};
+  models::DefaultOrderQueue::Allocator OrderQueueAllocator{6000};
+
+  models::InstrumentId instrument_{};
 };
 } // namespace stockex::engine
