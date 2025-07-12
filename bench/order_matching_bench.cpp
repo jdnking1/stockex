@@ -133,8 +133,8 @@ int main(int argc, char **argv) {
 
   printMetrics(latencies, totalMatches);
 
-  std::string latency_filename = "latencies_" + testName + ".txt";
-  saveLatenciesToFile(latencies, latency_filename);
+  std::string filename = "latencies_" + testName + ".txt";
+  saveLatenciesToFile(latencies, filename);
 
   return 0;
 }
