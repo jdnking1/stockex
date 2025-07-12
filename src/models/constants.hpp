@@ -16,10 +16,10 @@ constexpr std::size_t MAX_MARKET_UPDATES = 256 * 1024;
 constexpr std::size_t MAX_NUM_CLIENTS = 10;
 
 /// Maximum number of orders
-constexpr std::size_t MAX_NUM_ORDERS = 15'000'000;
+constexpr std::size_t MAX_NUM_ORDERS = 25'000'000;
 
 /// Maximum price level depth in the order books.
-constexpr std::size_t MAX_PRICE_LEVELS = 256;
+constexpr std::size_t MAX_PRICE_LEVELS = 1000;
 
 constexpr std::size_t MAX_MATCH_EVENTS = 1000;
 

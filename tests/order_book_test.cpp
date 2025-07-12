@@ -7,7 +7,6 @@
 
 #include "engine/order_book.hpp"
 #include "models/basic_types.hpp"
-#include "models/order.hpp"
 
 namespace stockex::engine {
 
@@ -19,11 +18,11 @@ protected:
   auto AddOrderAndVerify(models::ClientId clientId,
                          models::OrderId clientOrderId,
                          models::OrderId marketOrderId, models::Side side,
-                         models::Price price, models::Quantity qty) {
+                         models::Price price, models::Quantity qty) const {
     book_->addOrder(clientId, clientOrderId, marketOrderId, side, price, qty);
     auto &orderInfo = book_->getOrder(clientId, clientOrderId);
     const auto *priceLevel = book_->getPriceLevel(price);
-    auto bOrder = priceLevel->orders.last();
+    auto bOrder = priceLevel->orders_.last();
     EXPECT_EQ(bOrder->clientId_, clientId);
     EXPECT_EQ(bOrder->orderId_, clientOrderId);
     EXPECT_EQ(orderInfo.marketOrderId_, marketOrderId);
@@ -95,8 +94,8 @@ TEST_F(OrderBookTest, RemoveOrderFromMultiOrderPriceLevel) {
   AddOrderAndVerify(1, 100, 100, BUY, 100, 50);
   AddOrderAndVerify(1, 101, 101, BUY, 100, 30);
   getOrderBook()->removeOrder(1, 100);
-  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders.front()->qty_, 30);
-  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders.front()->orderId_, 101);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders_.front()->qty_, 30);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders_.front()->orderId_, 101);
 }
 
 TEST_F(OrderBookTest, MatchSingleFullFill) {
@@ -125,7 +124,7 @@ TEST_F(OrderBookTest, MatchSinglePartialFillResting) {
   EXPECT_EQ(result.remainingQuantity_, 0);
   auto *priceLevel = getOrderBook()->getPriceLevel(100);
   ASSERT_NE(priceLevel, nullptr);
-  EXPECT_EQ(priceLevel->orders.front()->qty_, 20);
+  EXPECT_EQ(priceLevel->orders_.front()->qty_, 20);
 }
 
 TEST_F(OrderBookTest, MatchMultipleOrdersSamePriceLevel) {
@@ -158,7 +157,7 @@ TEST_F(OrderBookTest, NoMatchPriceMismatch) {
   EXPECT_EQ(result.remainingQuantity_, 50);
   auto *priceLevel = getOrderBook()->getPriceLevel(101);
   ASSERT_NE(priceLevel, nullptr);
-  EXPECT_EQ(priceLevel->orders.front()->qty_, 50);
+  EXPECT_EQ(priceLevel->orders_.front()->qty_, 50);
 }
 
 TEST_F(OrderBookTest, MatchMaxEventsLimit) {
@@ -189,7 +188,7 @@ TEST_F(OrderBookTest, ComplexScenario) {
   EXPECT_EQ(getOrderBook()->getPriceLevel(99), nullptr);
   auto *priceLevel = getOrderBook()->getPriceLevel(101);
   ASSERT_NE(priceLevel, nullptr);
-  EXPECT_EQ(priceLevel->orders.front()->qty_, 30);
+  EXPECT_EQ(priceLevel->orders_.front()->qty_, 30);
 }
 
 #ifdef NDEBUG
