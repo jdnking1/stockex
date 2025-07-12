@@ -56,7 +56,8 @@ public:
     return priceLevels_[getPriceIndex(price)];
   }
 
-  auto getPriceLevel(models::Price price) noexcept -> models::PriceLevel * {
+  auto getPriceLevel(models::Price price) noexcept
+      ->  models::PriceLevel * {
     return priceLevels_[getPriceIndex(price)];
   }
 
