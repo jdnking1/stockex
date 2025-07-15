@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXECUTABLE="./orderMatchingBench"
+EXECUTABLE="./matchingBenchmark"
 
 TEST_SCENARIOS=(
   "flat"

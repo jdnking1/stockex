@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
 
   printMetrics(latencies, totalMatches);
 
-  std::string filename = "latencies_" + testName + ".txt";
+  std::string filename = "latencies_chunkedqueue_" + testName + ".txt";
   saveLatenciesToFile(latencies, filename);
 
   return 0;
