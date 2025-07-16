@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
+#include <immintrin.h> 
 
 #include "basic_types.hpp"
 #include "models/constants.hpp"
@@ -12,7 +14,6 @@ struct BasicOrder {
   OrderId orderId_{};
   Quantity qty_{};
   ClientId clientId_{};
-  bool deleted_{false};
 };
 
 template <std::size_t ChunkSize = QUEUE_CHUNK_SIZE> class OrderQueue;
@@ -24,9 +25,13 @@ template <std::size_t ChunkSize> struct OrderHandle {
 
 template <std::size_t ChunkSize> class OrderQueue {
 public:
+  static constexpr std::size_t BitsPerWord = 64;
+  static constexpr std::size_t NumBitmapWords = (ChunkSize + BitsPerWord - 1) / BitsPerWord;
+
   struct Chunk {
     std::array<BasicOrder, ChunkSize> orders{};
-    std::size_t count{};
+    std::array<std::uint64_t, NumBitmapWords> validityBitmap{};
+    std::size_t highWaterMark{};
     Chunk *next{};
     Chunk *prev{};
   };
@@ -53,22 +58,33 @@ public:
   OrderQueue &operator=(OrderQueue &&) = delete;
 
   auto push(BasicOrder order) -> Handle {
-    if (tailChunk_->count >= ChunkSize) {
+    if (tailChunk_->highWaterMark >= ChunkSize) {
       allocateNewChunk();
     }
 
-    const std::size_t index = tailChunk_->count;
+    const auto index = tailChunk_->highWaterMark;
     tailChunk_->orders[index] = order;
-    tailChunk_->count++;
+
+    const auto wordIndex = index / BitsPerWord;
+    const auto bitIndex = index % BitsPerWord;
+    tailChunk_->validityBitmap[wordIndex] |= (1ULL << bitIndex);
+
+    tailChunk_->highWaterMark++;
     totalSize_++;
 
     return Handle{tailChunk_, index};
   }
 
   auto remove(Handle handle) noexcept -> void {
-    if (handle.chunk_ && !handle.chunk_->orders[handle.index_].deleted_) {
-      handle.chunk_->orders[handle.index_].deleted_ = true;
-      totalSize_--;
+    if (handle.chunk_) {
+      const auto wordIndex = handle.index_ / BitsPerWord;
+      const auto bitIndex = handle.index_ % BitsPerWord;
+      const std::uint64_t mask = (1ULL << bitIndex);
+
+      if (handle.chunk_->validityBitmap[wordIndex] & mask) {
+        handle.chunk_->validityBitmap[wordIndex] &= ~mask;
+        totalSize_--;
+      }
     }
   }
 
@@ -76,8 +92,7 @@ public:
     advanceHead();
     if (empty())
       return;
-    headChunk_->orders[headOrderIndex_].deleted_ = true;
-    totalSize_--;
+    remove({headChunk_, headOrderIndex_});
   }
 
   [[nodiscard]] auto front() noexcept -> BasicOrder * {
@@ -89,45 +104,75 @@ public:
     if (empty()) {
       return nullptr;
     }
+
     const auto *currentChunk = headChunk_;
     auto currentIndex = headOrderIndex_;
+
     while (currentChunk) {
-      while (currentIndex < currentChunk->count) {
-        if (!currentChunk->orders[currentIndex].deleted_) {
-          return &currentChunk->orders[currentIndex];
+
+      if (auto wordIndex = currentIndex / BitsPerWord; wordIndex < NumBitmapWords) {
+        auto word = currentChunk->validityBitmap[wordIndex];
+        word &= ~((1ULL << (currentIndex % BitsPerWord)) - 1);
+
+        while (wordIndex < NumBitmapWords) {
+          if (word != 0) {
+            const auto nextBitOffset = _tzcnt_u64(word);
+            const auto foundIndex = wordIndex * BitsPerWord + nextBitOffset;
+            if (foundIndex < currentChunk->highWaterMark) {
+              return &currentChunk->orders[foundIndex];
+            }
+          }
+          wordIndex++;
+          if (wordIndex < NumBitmapWords) {
+            word = currentChunk->validityBitmap[wordIndex];
+          }
         }
-        currentIndex++;
       }
       currentChunk = currentChunk->next;
       currentIndex = 0;
     }
-    return nullptr;
-  }
 
-  [[nodiscard]] auto last() noexcept -> BasicOrder * {
-    return const_cast<BasicOrder *>(
-        static_cast<const OrderQueue *>(this)->last());
+    return nullptr;
   }
 
   [[nodiscard]] auto last() const noexcept -> const BasicOrder * {
     if (empty()) {
       return nullptr;
     }
-    const Chunk *currentChunk = tailChunk_;
-    auto currentIndex = static_cast<long>(currentChunk->count) - 1;
+
+    const auto *currentChunk = tailChunk_;
+    auto currentIndex = static_cast<long>(currentChunk->highWaterMark) - 1;
 
     while (currentChunk) {
-      while (currentIndex >= 0) {
-        if (!currentChunk->orders[currentIndex].deleted_) {
-          return &currentChunk->orders[currentIndex];
+      if (currentIndex < 0) {
+        currentChunk = currentChunk->prev;
+        if (currentChunk) {
+          currentIndex = static_cast<long>(currentChunk->highWaterMark) - 1;
         }
-        currentIndex--;
+        continue;
       }
+
+      long wordIndex = currentIndex / BitsPerWord;
+
+      while (wordIndex >= 0) {
+        std::uint64_t word = currentChunk->validityBitmap[wordIndex];
+        word &= (1ULL << ((currentIndex % BitsPerWord) + 1)) - 1;
+
+        if (word != 0) {
+          const auto lastBitOffset = (BitsPerWord - 1) - _lzcnt_u64(word);
+          const auto foundIndex = wordIndex * BitsPerWord + lastBitOffset;
+          return &currentChunk->orders[foundIndex];
+        }
+        wordIndex--;
+        currentIndex = wordIndex * BitsPerWord + (BitsPerWord - 1);
+      }
+
       currentChunk = currentChunk->prev;
       if (currentChunk) {
-        currentIndex = static_cast<long>(currentChunk->count) - 1;
+        currentIndex = static_cast<long>(currentChunk->highWaterMark) - 1;
       }
     }
+
     return nullptr;
   }
 
@@ -151,11 +196,23 @@ private:
       return;
 
     while (headChunk_ != nullptr) {
-      while (headOrderIndex_ < headChunk_->count) {
-        if (!headChunk_->orders[headOrderIndex_].deleted_) {
-          return;
+      auto wordIndex = headOrderIndex_ / BitsPerWord;
+      auto currentWord = headChunk_->validityBitmap[wordIndex];
+      currentWord &= ~((1ULL << (headOrderIndex_ % BitsPerWord)) - 1);
+
+      while (wordIndex < NumBitmapWords) {
+        if (currentWord != 0) {
+          const auto nextBitOffset = _tzcnt_u64(currentWord);
+          headOrderIndex_ = wordIndex * BitsPerWord + nextBitOffset;
+
+          if (headOrderIndex_ < headChunk_->highWaterMark) {
+            return;
+          }
         }
-        headOrderIndex_++;
+        wordIndex++;
+        if (wordIndex < NumBitmapWords) {
+          currentWord = headChunk_->validityBitmap[wordIndex];
+        }
       }
 
       if (headChunk_ == tailChunk_) {
@@ -179,4 +236,5 @@ private:
   std::size_t headOrderIndex_{};
   std::size_t totalSize_{};
 };
+
 } // namespace stockex::models

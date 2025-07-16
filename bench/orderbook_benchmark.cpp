@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <format>
 #include <memory>
 #include <print>
 #include <random>
@@ -13,10 +14,11 @@
 using namespace stockex::models;
 using namespace stockex::benchmarks;
 
+const std::string IMPLEMENTATION = "bitmap_chunked_order_queue";
 constexpr size_t TOTAL_EVENTS = 15'000'000;
-constexpr size_t INITIAL_BOOK_DEPTH = 100'000;
+constexpr size_t INITIAL_BOOK_DEPTH = 3'000'000;
 constexpr int ORDER_TO_TRADE_RATIO = 50;
-constexpr int ADD_PROBABILITY_PERCENT = 55;
+constexpr int ADD_PROBABILITY_PERCENT = 20;
 constexpr Price BASE_PRICE = 5000;
 constexpr double PRICE_STD_DEV = 10.0;
 
@@ -118,7 +120,7 @@ SimulationResults runSimulation(stockex::engine::OrderBook &book,
   return results;
 }
 
-int main() {
+int main(int argc, char **argv) {
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
   std::mt19937 rng(42);
 
@@ -142,6 +144,12 @@ int main() {
   }
   std::println("Book pre-filled. Active orders: {}", activeOrders.size());
 
+  if (argc == 2) {
+    if (auto perfMode = parsePerfMode(argv[1]); perfMode != stockex::benchmarks::PerfMode::None) {
+      runPerf(perfMode, "orderbook_benchmark");
+    }
+  }
+
   SimulationConfig config{.totalEvents = TOTAL_EVENTS,
                           .orderToTradeRatio = ORDER_TO_TRADE_RATIO,
                           .addProbabilityPercent = ADD_PROBABILITY_PERCENT,
@@ -160,7 +168,6 @@ int main() {
   std::println("Adds: {}, Cancels: {}, Matches: {}", results.adds,
                results.cancels, results.matches);
 
-
   std::println("\n--- Add Order Metrics ---");
   stockex::benchmarks::printMetrics(results.addLatencies, results.adds);
 
@@ -172,11 +179,11 @@ int main() {
 
   std::println("\n--- Saving latency data to files... ---");
   stockex::benchmarks::saveLatenciesToFile(results.addLatencies,
-                                           "latencies_add_chunked.txt");
+                                           std::format("latencies_add_{}.txt", IMPLEMENTATION));
   stockex::benchmarks::saveLatenciesToFile(results.cancelLatencies,
-                                           "latencies_cancel_chunked.txt");
+                                           std::format("latencies_cancel_{}.txt", IMPLEMENTATION));
   stockex::benchmarks::saveLatenciesToFile(results.matchLatencies,
-                                           "latencies_match_chunked.txt");
+                                           std::format("latencies_match_{}.txt", IMPLEMENTATION));
   std::println("Data saved successfully.");
 
   return 0;
