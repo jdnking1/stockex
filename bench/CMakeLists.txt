@@ -1,7 +1,3 @@
-add_executable(matchingBenchmark matching_benchmark.cpp)
-
-target_link_libraries(matchingBenchmark PRIVATE libexchange)
-
 add_executable(orderBookBenchmark orderbook_benchmark.cpp)
 
 target_link_libraries(orderBookBenchmark PRIVATE libexchange)

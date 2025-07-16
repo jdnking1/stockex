@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <format>
 #include <memory>
 #include <print>
 #include <random>
@@ -13,6 +14,7 @@
 using namespace stockex::models;
 using namespace stockex::benchmarks;
 
+const std::string IMPLEMENTATION = "bitmap_chunked_order_queue";
 constexpr size_t TOTAL_EVENTS = 15'000'000;
 constexpr size_t INITIAL_BOOK_DEPTH = 3'000'000;
 constexpr int ORDER_TO_TRADE_RATIO = 50;
@@ -142,8 +144,8 @@ int main(int argc, char **argv) {
   }
   std::println("Book pre-filled. Active orders: {}", activeOrders.size());
 
-  if (argc > 2) {
-    if (auto perfMode = parsePerfMode(argv[2]); perfMode != stockex::benchmarks::PerfMode::None) {
+  if (argc == 2) {
+    if (auto perfMode = parsePerfMode(argv[1]); perfMode != stockex::benchmarks::PerfMode::None) {
       runPerf(perfMode, "orderbook_benchmark");
     }
   }
@@ -177,11 +179,11 @@ int main(int argc, char **argv) {
 
   std::println("\n--- Saving latency data to files... ---");
   stockex::benchmarks::saveLatenciesToFile(results.addLatencies,
-                                           "latencies_add_chunked.txt");
+                                           std::format("latencies_add_{}.txt", IMPLEMENTATION));
   stockex::benchmarks::saveLatenciesToFile(results.cancelLatencies,
-                                           "latencies_cancel_chunked.txt");
+                                           std::format("latencies_cancel_{}.txt", IMPLEMENTATION));
   stockex::benchmarks::saveLatenciesToFile(results.matchLatencies,
-                                           "latencies_match_chunked.txt");
+                                           std::format("latencies_match_{}.txt", IMPLEMENTATION));
   std::println("Data saved successfully.");
 
   return 0;
