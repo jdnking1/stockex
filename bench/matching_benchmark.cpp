@@ -110,11 +110,11 @@ int main(int argc, char **argv) {
   std::print("reserving\n");
   std::vector<double> latencies;
   latencies.reserve(1250300);
-
+/*
   if (auto perfMode = parsePerfMode(argc, argv); perfMode != None) {
     runPerf(perfMode, testName);
-  }
-
+  }*/
+  
   std::print("--- Benchmarking match() ---\n");
   size_t totalMatches = 0;
   std::mt19937 rng(42);

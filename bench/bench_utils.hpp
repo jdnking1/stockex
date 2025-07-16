@@ -36,11 +36,8 @@ inline void runPerf(PerfMode mode, const std::string &testName) {
   std::this_thread::sleep_for(std::chrono::milliseconds(5));
 }
 
-inline PerfMode parsePerfMode(int argc, char **argv) {
+inline PerfMode parsePerfMode(const std::string& flag) {
   using enum PerfMode;
-  if (argc < 3)
-    return None;
-  std::string flag = argv[2];
   if (flag == "--perf=record")
     return Record;
   if (flag == "--perf=stat")

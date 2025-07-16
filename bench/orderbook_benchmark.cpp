@@ -14,9 +14,9 @@ using namespace stockex::models;
 using namespace stockex::benchmarks;
 
 constexpr size_t TOTAL_EVENTS = 15'000'000;
-constexpr size_t INITIAL_BOOK_DEPTH = 100'000;
+constexpr size_t INITIAL_BOOK_DEPTH = 3'000'000;
 constexpr int ORDER_TO_TRADE_RATIO = 50;
-constexpr int ADD_PROBABILITY_PERCENT = 55;
+constexpr int ADD_PROBABILITY_PERCENT = 20;
 constexpr Price BASE_PRICE = 5000;
 constexpr double PRICE_STD_DEV = 10.0;
 
@@ -118,7 +118,7 @@ SimulationResults runSimulation(stockex::engine::OrderBook &book,
   return results;
 }
 
-int main() {
+int main(int argc, char **argv) {
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
   std::mt19937 rng(42);
 
@@ -142,6 +142,12 @@ int main() {
   }
   std::println("Book pre-filled. Active orders: {}", activeOrders.size());
 
+  if (argc > 2) {
+    if (auto perfMode = parsePerfMode(argv[2]); perfMode != stockex::benchmarks::PerfMode::None) {
+      runPerf(perfMode, "orderbook_benchmark");
+    }
+  }
+
   SimulationConfig config{.totalEvents = TOTAL_EVENTS,
                           .orderToTradeRatio = ORDER_TO_TRADE_RATIO,
                           .addProbabilityPercent = ADD_PROBABILITY_PERCENT,
@@ -159,7 +165,6 @@ int main() {
   std::println("Time Elapsed: {}s", simulationTime);
   std::println("Adds: {}, Cancels: {}, Matches: {}", results.adds,
                results.cancels, results.matches);
-
 
   std::println("\n--- Add Order Metrics ---");
   stockex::benchmarks::printMetrics(results.addLatencies, results.adds);

@@ -101,7 +101,7 @@ private:
 
   utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
       models::MAX_PRICE_LEVELS};
-  models::DefaultOrderQueue::Allocator OrderQueueAllocator{6000};
+  models::DefaultOrderQueue::Allocator OrderQueueAllocator{10000};
 
   models::InstrumentId instrument_{};
 };
