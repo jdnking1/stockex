@@ -2,7 +2,7 @@
 
 #include <array>
 #include <cstdint>
-#include <immintrin.h> // For _tzcnt_u64
+#include <immintrin.h> 
 
 #include "basic_types.hpp"
 #include "models/constants.hpp"
@@ -10,7 +10,6 @@
 
 namespace stockex::models {
 
-// The 'deleted_' flag is no longer needed.
 struct BasicOrder {
   OrderId orderId_{};
   Quantity qty_{};
@@ -26,12 +25,13 @@ template <std::size_t ChunkSize> struct OrderHandle {
 
 template <std::size_t ChunkSize> class OrderQueue {
 public:
-  static constexpr std::size_t NumBitmapWords = (ChunkSize + 63) / 64;
+  static constexpr std::size_t BitsPerWord = 64;
+  static constexpr std::size_t NumBitmapWords = (ChunkSize + BitsPerWord - 1) / BitsPerWord;
 
   struct Chunk {
     std::array<BasicOrder, ChunkSize> orders{};
     std::array<std::uint64_t, NumBitmapWords> validityBitmap{};
-    std::size_t count{}; // High-water mark of insertions
+    std::size_t highWaterMark{};
     Chunk *next{};
     Chunk *prev{};
   };
@@ -52,26 +52,24 @@ public:
     }
   }
 
-  // Deleted copy/move constructors and assignments
   OrderQueue(const OrderQueue &) = delete;
   OrderQueue &operator=(const OrderQueue &) = delete;
   OrderQueue(OrderQueue &&) = delete;
   OrderQueue &operator=(OrderQueue &&) = delete;
 
   auto push(BasicOrder order) -> Handle {
-    if (tailChunk_->count >= ChunkSize) {
+    if (tailChunk_->highWaterMark >= ChunkSize) {
       allocateNewChunk();
     }
 
-    const std::size_t index = tailChunk_->count;
+    const auto index = tailChunk_->highWaterMark;
     tailChunk_->orders[index] = order;
 
-    // Set the corresponding bit in the validity bitmap
-    const std::size_t wordIndex = index / 64;
-    const std::size_t bitIndex = index % 64;
+    const auto wordIndex = index / BitsPerWord;
+    const auto bitIndex = index % BitsPerWord;
     tailChunk_->validityBitmap[wordIndex] |= (1ULL << bitIndex);
 
-    tailChunk_->count++;
+    tailChunk_->highWaterMark++;
     totalSize_++;
 
     return Handle{tailChunk_, index};
@@ -79,13 +77,12 @@ public:
 
   auto remove(Handle handle) noexcept -> void {
     if (handle.chunk_) {
-      const std::size_t wordIndex = handle.index_ / 64;
-      const std::size_t bitIndex = handle.index_ % 64;
+      const auto wordIndex = handle.index_ / BitsPerWord;
+      const auto bitIndex = handle.index_ % BitsPerWord;
       const std::uint64_t mask = (1ULL << bitIndex);
 
-      // Check if the bit is set before clearing it to avoid double-deletes
       if (handle.chunk_->validityBitmap[wordIndex] & mask) {
-        handle.chunk_->validityBitmap[wordIndex] &= ~mask; // Clear the bit
+        handle.chunk_->validityBitmap[wordIndex] &= ~mask;
         totalSize_--;
       }
     }
@@ -108,39 +105,34 @@ public:
       return nullptr;
     }
 
-    const Chunk *currentChunk = headChunk_;
-    std::size_t currentIndex = headOrderIndex_;
+    const auto *currentChunk = headChunk_;
+    auto currentIndex = headOrderIndex_;
 
     while (currentChunk) {
-      std::size_t wordIndex = currentIndex / 64;
 
-      if (wordIndex < NumBitmapWords) {
-        std::uint64_t word = currentChunk->validityBitmap[wordIndex];
-        // Mask off bits we've already processed
-        word &= ~((1ULL << (currentIndex % 64)) - 1);
+      if (auto wordIndex = currentIndex / BitsPerWord; wordIndex < NumBitmapWords) {
+        auto word = currentChunk->validityBitmap[wordIndex];
+        word &= ~((1ULL << (currentIndex % BitsPerWord)) - 1);
 
         while (wordIndex < NumBitmapWords) {
           if (word != 0) {
             const auto nextBitOffset = _tzcnt_u64(word);
-            const auto foundIndex = wordIndex * 64 + nextBitOffset;
-            if (foundIndex < currentChunk->count) {
+            const auto foundIndex = wordIndex * BitsPerWord + nextBitOffset;
+            if (foundIndex < currentChunk->highWaterMark) {
               return &currentChunk->orders[foundIndex];
             }
           }
-          // Move to the next word
           wordIndex++;
           if (wordIndex < NumBitmapWords) {
             word = currentChunk->validityBitmap[wordIndex];
           }
         }
       }
-
-      // No valid orders in the rest of this chunk, move to the next one
       currentChunk = currentChunk->next;
-      currentIndex = 0; // Start search from the beginning of the next chunk
+      currentIndex = 0;
     }
 
-    return nullptr; // Should not be reached if totalSize_ is accurate
+    return nullptr;
   }
 
   [[nodiscard]] auto last() const noexcept -> const BasicOrder * {
@@ -148,41 +140,36 @@ public:
       return nullptr;
     }
 
-    const Chunk *currentChunk = tailChunk_;
-    long currentIndex = static_cast<long>(currentChunk->count) - 1;
+    const auto *currentChunk = tailChunk_;
+    auto currentIndex = static_cast<long>(currentChunk->highWaterMark) - 1;
 
     while (currentChunk) {
-      if (currentIndex < 0) { // If the current chunk is empty
+      if (currentIndex < 0) {
         currentChunk = currentChunk->prev;
         if (currentChunk) {
-          currentIndex = static_cast<long>(currentChunk->count) - 1;
+          currentIndex = static_cast<long>(currentChunk->highWaterMark) - 1;
         }
         continue;
       }
 
-      long wordIndex = currentIndex / 64;
+      long wordIndex = currentIndex / BitsPerWord;
 
       while (wordIndex >= 0) {
         std::uint64_t word = currentChunk->validityBitmap[wordIndex];
-        // Mask off bits after the current index
-        word &= (1ULL << ((currentIndex % 64) + 1)) - 1;
+        word &= (1ULL << ((currentIndex % BitsPerWord) + 1)) - 1;
 
         if (word != 0) {
-          // 63 - _lzcnt finds the index of the most significant (left-most) set
-          // bit
-          const auto lastBitOffset = 63 - _lzcnt_u64(word);
-          const auto foundIndex = wordIndex * 64 + lastBitOffset;
+          const auto lastBitOffset = (BitsPerWord - 1) - _lzcnt_u64(word);
+          const auto foundIndex = wordIndex * BitsPerWord + lastBitOffset;
           return &currentChunk->orders[foundIndex];
         }
-        // Move to the previous word
         wordIndex--;
-        currentIndex = wordIndex * 64 + 63;
+        currentIndex = wordIndex * BitsPerWord + (BitsPerWord - 1);
       }
 
-      // No valid orders found in this chunk, move to the previous one
       currentChunk = currentChunk->prev;
       if (currentChunk) {
-        currentIndex = static_cast<long>(currentChunk->count) - 1;
+        currentIndex = static_cast<long>(currentChunk->highWaterMark) - 1;
       }
     }
 
@@ -195,11 +182,6 @@ public:
 private:
   auto allocateNewChunk() noexcept -> void {
     auto *newChunk = allocator_.alloc();
-    newChunk->count = 0;
-    for (auto &word : newChunk->validityBitmap) {
-      word = 0;
-    } // Ensure bitmap is zeroed
-
     if (headChunk_ == nullptr) {
       headChunk_ = tailChunk_ = newChunk;
     } else {
@@ -214,32 +196,26 @@ private:
       return;
 
     while (headChunk_ != nullptr) {
-      std::size_t wordIndex = headOrderIndex_ / 64;
-      std::uint64_t currentWord = headChunk_->validityBitmap[wordIndex];
-
-      // Mask off bits we've already processed in the current word
-      currentWord &= ~((1ULL << (headOrderIndex_ % 64)) - 1);
+      auto wordIndex = headOrderIndex_ / BitsPerWord;
+      auto currentWord = headChunk_->validityBitmap[wordIndex];
+      currentWord &= ~((1ULL << (headOrderIndex_ % BitsPerWord)) - 1);
 
       while (wordIndex < NumBitmapWords) {
         if (currentWord != 0) {
-          // Found a valid order in this word
           const auto nextBitOffset = _tzcnt_u64(currentWord);
-          headOrderIndex_ = wordIndex * 64 + nextBitOffset;
+          headOrderIndex_ = wordIndex * BitsPerWord + nextBitOffset;
 
-          // Ensure we haven't advanced past the number of inserted items
-          if (headOrderIndex_ < headChunk_->count) {
-            return; // Found the next valid order
+          if (headOrderIndex_ < headChunk_->highWaterMark) {
+            return;
           }
         }
-        // Move to the next word in the bitmap
         wordIndex++;
         if (wordIndex < NumBitmapWords) {
           currentWord = headChunk_->validityBitmap[wordIndex];
         }
       }
 
-      // No valid orders left in this chunk, move to the next one.
-      if (headChunk_ == tailChunk_) { // Last chunk
+      if (headChunk_ == tailChunk_) {
         allocator_.free(headChunk_);
         headChunk_ = nullptr;
         tailChunk_ = nullptr;
