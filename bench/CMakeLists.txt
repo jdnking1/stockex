@@ -1,3 +1,5 @@
 add_executable(orderBookBenchmark orderbook_benchmark.cpp)
-
 target_link_libraries(orderBookBenchmark PRIVATE libexchange)
+
+add_executable(fragmentation_benchmark benchmark_fragmentation.cpp)
+target_link_libraries(fragmentation_benchmark PRIVATE libexchange)

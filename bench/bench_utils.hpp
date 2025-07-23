@@ -36,7 +36,7 @@ inline void runPerf(PerfMode mode, const std::string &testName) {
   std::this_thread::sleep_for(std::chrono::milliseconds(5));
 }
 
-inline PerfMode parsePerfMode(const std::string& flag) {
+inline PerfMode parsePerfMode(const std::string &flag) {
   using enum PerfMode;
   if (flag == "--perf=record")
     return Record;
@@ -50,13 +50,13 @@ inline PerfMode parsePerfMode(const std::string& flag) {
 
 inline void saveLatenciesToFile(const std::vector<double> &latencies,
                                 const std::string &filename) {
-  std::ofstream output_file(filename);
-  if (!output_file.is_open()) {
+  std::ofstream outputFile(filename);
+  if (!outputFile.is_open()) {
     std::print(stderr, "Error: Could not open the file {}\n", filename);
     return;
   }
   for (const double &latency : latencies) {
-    output_file << latency << "\n";
+    outputFile << latency << "\n";
   }
   std::print("Successfully saved {} latency values to {}\n", latencies.size(),
              filename);

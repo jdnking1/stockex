@@ -145,7 +145,8 @@ int main(int argc, char **argv) {
   std::println("Book pre-filled. Active orders: {}", activeOrders.size());
 
   if (argc == 2) {
-    if (auto perfMode = parsePerfMode(argv[1]); perfMode != stockex::benchmarks::PerfMode::None) {
+    if (auto perfMode = parsePerfMode(argv[1]);
+        perfMode != stockex::benchmarks::PerfMode::None) {
       runPerf(perfMode, "orderbook_benchmark");
     }
   }
@@ -178,12 +179,15 @@ int main(int argc, char **argv) {
   stockex::benchmarks::printMetrics(results.matchLatencies, results.matches);
 
   std::println("\n--- Saving latency data to files... ---");
-  stockex::benchmarks::saveLatenciesToFile(results.addLatencies,
-                                           std::format("latencies_add_{}.txt", IMPLEMENTATION));
-  stockex::benchmarks::saveLatenciesToFile(results.cancelLatencies,
-                                           std::format("latencies_cancel_{}.txt", IMPLEMENTATION));
-  stockex::benchmarks::saveLatenciesToFile(results.matchLatencies,
-                                           std::format("latencies_match_{}.txt", IMPLEMENTATION));
+  stockex::benchmarks::saveLatenciesToFile(
+      results.addLatencies,
+      std::format("latencies_add_{}.txt", IMPLEMENTATION));
+  stockex::benchmarks::saveLatenciesToFile(
+      results.cancelLatencies,
+      std::format("latencies_cancel_{}.txt", IMPLEMENTATION));
+  stockex::benchmarks::saveLatenciesToFile(
+      results.matchLatencies,
+      std::format("latencies_match_{}.txt", IMPLEMENTATION));
   std::println("Data saved successfully.");
 
   return 0;

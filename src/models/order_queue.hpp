@@ -2,7 +2,7 @@
 
 #include <array>
 #include <cstdint>
-#include <immintrin.h> 
+#include <immintrin.h>
 
 #include "basic_types.hpp"
 #include "models/constants.hpp"
@@ -26,7 +26,8 @@ template <std::size_t ChunkSize> struct OrderHandle {
 template <std::size_t ChunkSize> class OrderQueue {
 public:
   static constexpr std::size_t BitsPerWord = 64;
-  static constexpr std::size_t NumBitmapWords = (ChunkSize + BitsPerWord - 1) / BitsPerWord;
+  static constexpr std::size_t NumBitmapWords =
+      (ChunkSize + BitsPerWord - 1) / BitsPerWord;
 
   struct Chunk {
     std::array<BasicOrder, ChunkSize> orders{};
@@ -110,7 +111,8 @@ public:
 
     while (currentChunk) {
 
-      if (auto wordIndex = currentIndex / BitsPerWord; wordIndex < NumBitmapWords) {
+      if (auto wordIndex = currentIndex / BitsPerWord;
+          wordIndex < NumBitmapWords) {
         auto word = currentChunk->validityBitmap[wordIndex];
         word &= ~((1ULL << (currentIndex % BitsPerWord)) - 1);
 
