@@ -10,6 +10,14 @@
 
 namespace stockex::models {
 
+// ==========================================================================
+// This preprocessor block will select which OrderQueue implementation to use.
+// If the USE_BITMAP_QUEUE macro is defined during compilation, it will use
+// Bitmap queue. Otherwise, it will default to the Soft Delete implementation.
+// ==========================================================================
+
+#ifdef USE_BITMAP_QUEUE
+
 struct BasicOrder {
   OrderId orderId_{};
   Quantity qty_{};
