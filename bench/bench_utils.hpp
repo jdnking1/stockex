@@ -13,7 +13,7 @@
 namespace stockex::benchmarks {
 enum class PerfMode { None, Record, Stat };
 
-inline void runPerf(PerfMode mode, const std::string &testName) {
+inline auto runPerf(PerfMode mode, const std::string &testName) -> void {
   if (pid_t pid = fork(); pid == 0) {
     const auto parentPid = std::to_string(getppid());
     std::print("Running perf on process {} \n", parentPid);
@@ -36,7 +36,7 @@ inline void runPerf(PerfMode mode, const std::string &testName) {
   std::this_thread::sleep_for(std::chrono::milliseconds(5));
 }
 
-inline PerfMode parsePerfMode(const std::string& flag) {
+inline auto parsePerfMode(const std::string &flag) -> PerfMode {
   using enum PerfMode;
   if (flag == "--perf=record")
     return Record;
@@ -48,21 +48,22 @@ inline PerfMode parsePerfMode(const std::string& flag) {
   exit(1);
 }
 
-inline void saveLatenciesToFile(const std::vector<double> &latencies,
-                                const std::string &filename) {
-  std::ofstream output_file(filename);
-  if (!output_file.is_open()) {
+inline auto saveLatenciesToFile(const std::vector<double> &latencies,
+                                const std::string &filename) -> void {
+  std::ofstream outputFile(filename);
+  if (!outputFile.is_open()) {
     std::print(stderr, "Error: Could not open the file {}\n", filename);
     return;
   }
   for (const double &latency : latencies) {
-    output_file << latency << "\n";
+    outputFile << latency << "\n";
   }
   std::print("Successfully saved {} latency values to {}\n", latencies.size(),
              filename);
 }
 
-inline void printMetrics(std::vector<double> &latencies, size_t totalOps) {
+inline auto printMetrics(std::vector<double> &latencies, size_t totalOps)
+    -> void {
   if (latencies.empty()) {
     std::print("No matches occurred, cannot compute metrics.\n");
     return;

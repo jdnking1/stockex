@@ -1,3 +1,8 @@
-add_executable(orderBookBenchmark orderbook_benchmark.cpp)
+add_executable(marketSimulation market_simulation.cpp)
+target_link_libraries(marketSimulation PRIVATE libexchange)
 
-target_link_libraries(orderBookBenchmark PRIVATE libexchange)
+add_executable(fragmentation_benchmark benchmark_fragmentation.cpp)
+target_link_libraries(fragmentation_benchmark PRIVATE libexchange)
+
+add_executable(sweep_benchmark benchmark_sweep.cpp)
+target_link_libraries(sweep_benchmark PRIVATE libexchange)

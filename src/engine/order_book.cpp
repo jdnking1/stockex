@@ -45,7 +45,6 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
     remainingQuantity -= matchedQty;
     matchedOrder->qty_ -= matchedQty;
 
-    // Record the trade event.
     matchResults_[matchCount] = {orderId,
                                  matchedOrder->orderId_,
                                  bestPriceLevel->price_,
