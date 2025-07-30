@@ -13,30 +13,19 @@ using namespace stockex::models;
 using namespace stockex::benchmarks;
 
 constexpr int NUM_ITERATIONS = 1000;
-constexpr size_t ORDERS_TO_ADD_CLEAN = 10000;
-constexpr size_t ORDERS_TO_ADD_FRAGMENTED = 20000;
+constexpr size_t ORDERS_PER_ITERATION = 10000;
 constexpr size_t ORDERS_TO_FILL_PER_SWEEP = 1000;
 constexpr Price TEST_PRICE = 5000;
 
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    std::print(stderr, "Usage: {} <implementation_name> <mode>\n", argv[0]);
-    std::print(stderr, "Modes: clean, fragmented\n");
+  if (argc != 2) {
+    std::print(stderr, "Usage: {} <implementation_name>\n", argv[0]);
     exit(1);
   }
   std::string implName = argv[1];
-  std::string mode = argv[2];
-
-  if (mode != "clean" && mode != "fragmented") {
-    std::print(stderr,
-               "Error: Invalid mode '{}'. Choose 'clean' or 'fragmented'.\n",
-               mode);
-    exit(1);
-  }
 
   std::println("--- Starting Sweep Test for: {} ---", implName);
-  std::println("--- Mode: {}, Fills per sweep: {} ---", mode,
-               ORDERS_TO_FILL_PER_SWEEP);
+  std::println("--- Fills per sweep: {} ---", ORDERS_TO_FILL_PER_SWEEP);
 
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
 
@@ -44,22 +33,9 @@ int main(int argc, char **argv) {
   latencies.reserve(NUM_ITERATIONS);
 
   for (int i = 0; i < NUM_ITERATIONS; ++i) {
-    if (mode == "clean") {
-      for (size_t j = 0; j < ORDERS_TO_ADD_CLEAN; ++j) {
-        auto id = static_cast<OrderId>((i * ORDERS_TO_ADD_CLEAN) + j);
-        book->addOrder(1, id, id, Side::BUY, TEST_PRICE, 1);
-      }
-    } else {
-      std::vector<OrderId> allIds;
-      allIds.reserve(ORDERS_TO_ADD_FRAGMENTED);
-      for (size_t j = 0; j < ORDERS_TO_ADD_FRAGMENTED; ++j) {
-        OrderId id = (i * ORDERS_TO_ADD_FRAGMENTED) + j;
-        book->addOrder(1, id, id, Side::BUY, TEST_PRICE, 1);
-        allIds.push_back(id);
-      }
-      for (size_t j = 0; j < ORDERS_TO_ADD_FRAGMENTED; j += 2) {
-        book->removeOrder(1, allIds[j]);
-      }
+    for (size_t j = 0; j < ORDERS_PER_ITERATION; ++j) {
+      auto id = static_cast<OrderId>((i * ORDERS_PER_ITERATION) + j);
+      book->addOrder(1, id, id, Side::BUY, TEST_PRICE, 1);
     }
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -78,14 +54,13 @@ int main(int argc, char **argv) {
     }
 
     auto r [[maybe_unused]] = book->match(2, 99999998, Side::SELL, TEST_PRICE,
-                                          ORDERS_TO_ADD_CLEAN * 2);
+                                          ORDERS_PER_ITERATION * 2);
   }
 
   std::println("\n--- Sweep Test Complete ---");
   stockex::benchmarks::printMetrics(latencies, latencies.size());
 
-  std::string filename =
-      std::format("latencies_sweep_test_{}_{}.txt", implName, mode);
+  auto filename = std::format("latencies_sweep_test_{}.txt", implName);
   stockex::benchmarks::saveLatenciesToFile(latencies, filename);
   std::println("Data saved successfully to {}", filename);
 

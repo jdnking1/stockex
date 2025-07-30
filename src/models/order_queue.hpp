@@ -1,9 +1,7 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <immintrin.h>
-#include <print>
 
 #include "basic_types.hpp"
 #include "models/constants.hpp"
@@ -50,7 +48,6 @@ public:
   using Allocator = utils::MemoryPool<Chunk>;
 
   explicit OrderQueue(Allocator &allocator) : allocator_{allocator} {
-    std::print("bit");
     allocateNewChunk();
   }
 
@@ -278,7 +275,6 @@ public:
   using Allocator = utils::MemoryPool<Chunk>;
 
   explicit OrderQueue(Allocator &allocator) : allocator_{allocator} {
-    std::print("soft");
     allocateNewChunk();
   }
 

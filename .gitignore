@@ -8,13 +8,15 @@ cmake_install.cmake
 install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
+benchmark_results
+benchmark_plots
 _deps
 CMakeUserPresets.json
 CMakeSettings.json
 .cache
 build
+buildt
 .vscode
 log
 out
 .vs
-scripts

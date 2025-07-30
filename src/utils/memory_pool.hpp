@@ -22,7 +22,7 @@ public:
            "T object should be first member of ObjectBlock.");
   }
 
-  template <typename... Args> T *alloc(Args &&...args) {
+  template <typename... Args> auto alloc(Args &&...args) -> T * {
     ASSERT(freeBlockCount_ > 0, "No free memory blocks.");
     auto memory_block = &memory_[freeBlockIndex_];
 #ifndef NDEBUG
@@ -36,7 +36,7 @@ public:
     return result;
   }
 
-  T *rawAlloc() {
+  auto rawAlloc() -> T * {
     ASSERT(freeBlockCount_ > 0, "No free memory blocks.");
     auto *memory_block = &memory_[freeBlockIndex_];
 #ifndef NDEBUG
@@ -49,7 +49,7 @@ public:
     return reinterpret_cast<T *>(&memory_[current_index].data_);
   }
 
-  void free(T *ptr) {
+  auto free(T *ptr) -> void {
     std::size_t block_index =
         reinterpret_cast<const MemoryBlock *>(ptr) - &memory_[0];
     ASSERT(block_index < memory_.size(), "Invalid memory block index.");

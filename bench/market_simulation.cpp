@@ -4,6 +4,7 @@
 #include <memory>
 #include <print>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,13 +15,19 @@
 using namespace stockex::models;
 using namespace stockex::benchmarks;
 
-const std::string IMPLEMENTATION = "bitmap_chunked_order_queue";
-constexpr size_t TOTAL_EVENTS = 15'000'000;
-constexpr size_t INITIAL_BOOK_DEPTH = 3'000'000;
-constexpr int ORDER_TO_TRADE_RATIO = 50;
-constexpr int ADD_PROBABILITY_PERCENT = 20;
+constexpr std::size_t TOTAL_EVENTS = 5'000'000;
 constexpr Price BASE_PRICE = 5000;
-constexpr double PRICE_STD_DEV = 10.0;
+
+struct SimulationConfig {
+  std::string implementationName;
+  std::string scenarioName;
+  std::size_t totalEvents;
+  std::size_t initialBookDepth;
+  int orderToTradeRatio;
+  int addProbabilityPercent;
+  Price basePrice;
+  double priceStdDev;
+};
 
 struct SimulationResults {
   std::vector<double> addLatencies;
@@ -31,22 +38,12 @@ struct SimulationResults {
   std::size_t matches{};
 };
 
-struct SimulationConfig {
-  std::size_t totalEvents;
-  int orderToTradeRatio;
-  int addProbabilityPercent;
-  Price basePrice;
-  double priceStdDev;
-};
-
-SimulationResults runSimulation(stockex::engine::OrderBook &book,
-                                std::mt19937 &rng,
-                                std::vector<OrderId> &activeOrders,
-                                OrderId &nextMarketOrderId,
-                                const SimulationConfig &config) {
+auto runSimulation(stockex::engine::OrderBook &book, std::mt19937 &rng,
+                   std::vector<OrderId> &activeOrders,
+                   OrderId &nextMarketOrderId, const SimulationConfig &config)
+    -> SimulationResults {
 
   SimulationResults results;
-
   results.addLatencies.reserve(config.totalEvents);
   results.cancelLatencies.reserve(config.totalEvents);
   results.matchLatencies.reserve(config.totalEvents / config.orderToTradeRatio);
@@ -57,6 +54,9 @@ SimulationResults runSimulation(stockex::engine::OrderBook &book,
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
 
   std::println("\n--- Starting simulation for {} events... ---", TOTAL_EVENTS);
+  std::println("--- Scenario: {}, Price StdDev: {}, Initial Depth: {} ---",
+               config.scenarioName, config.priceStdDev,
+               config.initialBookDepth);
 
   for (std::size_t i = 0; i < config.totalEvents; ++i) {
     const int eventType = actionDist(rng);
@@ -116,46 +116,76 @@ SimulationResults runSimulation(stockex::engine::OrderBook &book,
       }
     }
   }
-
   return results;
 }
 
+auto parseConfig(int argc, char **argv) -> SimulationConfig {
+  if (argc != 4) {
+    std::print(stderr,
+               "Usage: {} <implementation_name> <scenario> <price_std_dev>\n",
+               argv[0]);
+    std::print(stderr, "Scenarios: add_heavy, cancel_heavy, match_heavy\n");
+    exit(1);
+  }
+
+  SimulationConfig config;
+  config.implementationName = argv[1];
+  config.scenarioName = argv[2];
+  try {
+    config.priceStdDev = std::stod(argv[3]);
+  } catch (const std::invalid_argument &) {
+    std::print(stderr, "Error: Invalid numeric argument for price_std_dev.\n");
+    exit(1);
+  }
+
+  config.totalEvents = TOTAL_EVENTS;
+  config.basePrice = BASE_PRICE;
+
+  if (auto scenario = config.scenarioName; scenario == "add_heavy") {
+    config.orderToTradeRatio = 50;
+    config.addProbabilityPercent = 80; // 80% adds, 20% cancels
+    config.initialBookDepth = 100'000;
+  } else if (scenario == "cancel_heavy") {
+    config.orderToTradeRatio = 50;
+    config.addProbabilityPercent = 20; // 20% adds, 80% cancels
+    config.initialBookDepth = 1'000'000;
+  } else if (scenario == "match_heavy") {
+    config.orderToTradeRatio = 5; // 1 match for every 4 add/cancels
+    config.addProbabilityPercent = 55;
+    config.initialBookDepth = 1'000'000;
+  } else {
+    std::print(stderr, "Unknown scenario: {}\n", scenario);
+    exit(1);
+  }
+
+  return config;
+}
+
 int main(int argc, char **argv) {
+  SimulationConfig config = parseConfig(argc, argv);
+
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
   std::mt19937 rng(42);
 
   std::uniform_int_distribution<Quantity> qty_dist(1, 100);
-  std::normal_distribution<> priceDist(BASE_PRICE, PRICE_STD_DEV);
+  std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
 
   std::vector<OrderId> activeOrders;
-  activeOrders.reserve(INITIAL_BOOK_DEPTH +
-                       (TOTAL_EVENTS * ADD_PROBABILITY_PERCENT / 100));
+  activeOrders.reserve(config.initialBookDepth +
+                       (TOTAL_EVENTS * config.addProbabilityPercent / 100));
   OrderId nextMarketOrderId{};
 
   std::println("--- Pre-filling order book with {} orders... ---",
-               INITIAL_BOOK_DEPTH);
-  for (std::size_t i = 0; i < INITIAL_BOOK_DEPTH; ++i) {
+               config.initialBookDepth);
+  for (std::size_t i = 0; i < config.initialBookDepth; ++i) {
     const auto price = static_cast<Price>(std::round(priceDist(rng)));
-    const auto side = (price < BASE_PRICE) ? Side::BUY : Side::SELL;
+    const auto side = (price < config.basePrice) ? Side::BUY : Side::SELL;
     book->addOrder(1, nextMarketOrderId, nextMarketOrderId, side, price,
                    qty_dist(rng));
     activeOrders.push_back(nextMarketOrderId);
     nextMarketOrderId++;
   }
   std::println("Book pre-filled. Active orders: {}", activeOrders.size());
-
-  if (argc == 2) {
-    if (auto perfMode = parsePerfMode(argv[1]);
-        perfMode != stockex::benchmarks::PerfMode::None) {
-      runPerf(perfMode, "orderbook_benchmark");
-    }
-  }
-
-  SimulationConfig config{.totalEvents = TOTAL_EVENTS,
-                          .orderToTradeRatio = ORDER_TO_TRADE_RATIO,
-                          .addProbabilityPercent = ADD_PROBABILITY_PERCENT,
-                          .basePrice = BASE_PRICE,
-                          .priceStdDev = PRICE_STD_DEV};
 
   auto start = std::chrono::high_resolution_clock::now();
   auto results =
@@ -179,15 +209,15 @@ int main(int argc, char **argv) {
   stockex::benchmarks::printMetrics(results.matchLatencies, results.matches);
 
   std::println("\n--- Saving latency data to files... ---");
+  std::string suffix =
+      std::format("{}_{}_{}", config.implementationName, config.scenarioName,
+                  static_cast<int>(config.priceStdDev));
   stockex::benchmarks::saveLatenciesToFile(
-      results.addLatencies,
-      std::format("latencies_add_{}.txt", IMPLEMENTATION));
+      results.addLatencies, std::format("latencies_add_{}.txt", suffix));
   stockex::benchmarks::saveLatenciesToFile(
-      results.cancelLatencies,
-      std::format("latencies_cancel_{}.txt", IMPLEMENTATION));
+      results.cancelLatencies, std::format("latencies_cancel_{}.txt", suffix));
   stockex::benchmarks::saveLatenciesToFile(
-      results.matchLatencies,
-      std::format("latencies_match_{}.txt", IMPLEMENTATION));
+      results.matchLatencies, std::format("latencies_match_{}.txt", suffix));
   std::println("Data saved successfully.");
 
   return 0;
