@@ -6,6 +6,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "bench_utils.hpp"
@@ -15,7 +16,7 @@
 using namespace stockex::models;
 using namespace stockex::benchmarks;
 
-constexpr std::size_t TOTAL_EVENTS = 5'000'000;
+constexpr std::size_t TOTAL_EVENTS = 15'000'000;
 constexpr Price BASE_PRICE = 5000;
 
 struct SimulationConfig {
@@ -38,8 +39,86 @@ struct SimulationResults {
   std::size_t matches{};
 };
 
+void handle_add_operation(
+    stockex::engine::OrderBook &book, std::mt19937 &rng,
+    std::unordered_map<OrderId, ClientId> &activeOrdersMap,
+    std::vector<OrderId> &activeOrdersVec, OrderId &nextMarketOrderId,
+    const SimulationConfig &config, SimulationResults &results,
+    std::normal_distribution<> &priceDist,
+    std::uniform_int_distribution<Quantity> &qty_dist) {
+  const auto price = static_cast<Price>(std::round(priceDist(rng)));
+  const Side side = (price < config.basePrice) ? Side::BUY : Side::SELL;
+  const ClientId clientId = 1;
+  const OrderId newOrderId = nextMarketOrderId++;
+
+  auto start = std::chrono::high_resolution_clock::now();
+  book.addOrder(clientId, newOrderId, newOrderId, side, price, qty_dist(rng));
+  auto end = std::chrono::high_resolution_clock::now();
+
+  results.addLatencies.push_back(
+      std::chrono::duration<double, std::micro>(end - start).count());
+
+  activeOrdersMap[newOrderId] = clientId;
+  activeOrdersVec.push_back(newOrderId);
+  results.adds++;
+}
+
+void handle_cancel_operation(
+    stockex::engine::OrderBook &book, std::mt19937 &rng,
+    std::unordered_map<OrderId, ClientId> &activeOrdersMap,
+    std::vector<OrderId> &activeOrdersVec, SimulationResults &results) {
+  if (activeOrdersVec.empty()) {
+    return;
+  }
+
+  std::uniform_int_distribution<std::size_t> cancelIndexDist(
+      0, activeOrdersVec.size() - 1);
+  auto vecIdx = cancelIndexDist(rng);
+  OrderId orderToCancel = activeOrdersVec[vecIdx];
+
+  activeOrdersVec[vecIdx] = activeOrdersVec.back();
+  activeOrdersVec.pop_back();
+
+  if (activeOrdersMap.erase(orderToCancel) == 1) {
+    auto start = std::chrono::high_resolution_clock::now();
+    book.removeOrder(1, orderToCancel);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    results.cancelLatencies.push_back(
+        std::chrono::duration<double, std::micro>(end - start).count());
+    results.cancels++;
+  }
+}
+
+void handle_match_operation(
+    stockex::engine::OrderBook &book, std::mt19937 &rng,
+    std::unordered_map<OrderId, ClientId> &activeOrdersMap,
+    OrderId &nextMarketOrderId, const SimulationConfig &config,
+    SimulationResults &results,
+    std::uniform_int_distribution<Quantity> &qty_dist, Side side) {
+  const Price price =
+      (side == Side::SELL) ? (config.basePrice - 20) : (config.basePrice + 20);
+  const Quantity quantity = qty_dist(rng) * 5;
+
+  auto start = std::chrono::high_resolution_clock::now();
+  auto matchResult = book.match(2, nextMarketOrderId++, side, price, quantity);
+  auto end = std::chrono::high_resolution_clock::now();
+
+  results.matchLatencies.push_back(
+      std::chrono::duration<double, std::micro>(end - start).count());
+  results.matches++;
+
+  if (!matchResult.matches_.empty()) {
+    std::ranges::for_each(matchResult.matches_,
+                          [&activeOrdersMap](const auto &match) {
+                            activeOrdersMap.erase(match.matchedOrderId_);
+                          });
+  }
+}
+
 auto runSimulation(stockex::engine::OrderBook &book, std::mt19937 &rng,
-                   std::vector<OrderId> &activeOrders,
+                   std::unordered_map<OrderId, ClientId> &activeOrdersMap,
+                   std::vector<OrderId> &activeOrdersVec,
                    OrderId &nextMarketOrderId, const SimulationConfig &config)
     -> SimulationResults {
 
@@ -54,66 +133,22 @@ auto runSimulation(stockex::engine::OrderBook &book, std::mt19937 &rng,
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
 
   std::println("\n--- Starting simulation for {} events... ---", TOTAL_EVENTS);
-  std::println("--- Scenario: {}, Price StdDev: {}, Initial Depth: {} ---",
-               config.scenarioName, config.priceStdDev,
-               config.initialBookDepth);
-
   for (std::size_t i = 0; i < config.totalEvents; ++i) {
     const int eventType = actionDist(rng);
 
     if (eventType < config.orderToTradeRatio) {
       if (addCancelDist(rng) <= config.addProbabilityPercent) {
-        const auto price = static_cast<Price>(std::round(priceDist(rng)));
-        const Side side = (price < config.basePrice) ? Side::BUY : Side::SELL;
-
-        auto start = std::chrono::high_resolution_clock::now();
-        book.addOrder(1, nextMarketOrderId, nextMarketOrderId, side, price,
-                      qty_dist(rng));
-        auto end = std::chrono::high_resolution_clock::now();
-
-        results.addLatencies.push_back(
-            std::chrono::duration<double, std::micro>(end - start).count());
-        activeOrders.push_back(nextMarketOrderId);
-        nextMarketOrderId++;
-        results.adds++;
-      } else if (!activeOrders.empty()) {
-        std::uniform_int_distribution<std::size_t> cancelIndexDist(
-            0, activeOrders.size() - 1);
-        auto idxToCancel = cancelIndexDist(rng);
-        auto orderToCancel = activeOrders[idxToCancel];
-
-        auto start = std::chrono::high_resolution_clock::now();
-        book.removeOrder(1, orderToCancel);
-        auto end = std::chrono::high_resolution_clock::now();
-
-        results.cancelLatencies.push_back(
-            std::chrono::duration<double, std::micro>(end - start).count());
-        activeOrders[idxToCancel] = activeOrders.back();
-        activeOrders.pop_back();
-        results.cancels++;
+        handle_add_operation(book, rng, activeOrdersMap, activeOrdersVec,
+                             nextMarketOrderId, config, results, priceDist,
+                             qty_dist);
+      } else {
+        handle_cancel_operation(book, rng, activeOrdersMap, activeOrdersVec,
+                                results);
       }
     } else {
       const auto side = (i % 2 == 0) ? Side::SELL : Side::BUY;
-      const Price price = (side == Side::SELL) ? (config.basePrice - 20)
-                                               : (config.basePrice + 20);
-      const Quantity quantity = qty_dist(rng) * 5;
-
-      auto start = std::chrono::high_resolution_clock::now();
-      auto matchResult =
-          book.match(2, nextMarketOrderId, side, price, quantity);
-      auto end = std::chrono::high_resolution_clock::now();
-
-      results.matchLatencies.push_back(
-          std::chrono::duration<double, std::micro>(end - start).count());
-      nextMarketOrderId++;
-      results.matches++;
-
-      if (!matchResult.matches_.empty()) {
-        std::ranges::for_each(matchResult.matches_,
-                              [&activeOrders](const auto &match) {
-                                std::erase(activeOrders, match.matchedOrderId_);
-                              });
-      }
+      handle_match_operation(book, rng, activeOrdersMap, nextMarketOrderId,
+                             config, results, qty_dist, side);
     }
   }
   return results;
@@ -170,9 +205,8 @@ int main(int argc, char **argv) {
   std::uniform_int_distribution<Quantity> qty_dist(1, 100);
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
 
-  std::vector<OrderId> activeOrders;
-  activeOrders.reserve(config.initialBookDepth +
-                       (TOTAL_EVENTS * config.addProbabilityPercent / 100));
+  std::unordered_map<OrderId, ClientId> activeOrdersMap;
+  std::vector<OrderId> activeOrdersVec;
   OrderId nextMarketOrderId{};
 
   std::println("--- Pre-filling order book with {} orders... ---",
@@ -180,16 +214,18 @@ int main(int argc, char **argv) {
   for (std::size_t i = 0; i < config.initialBookDepth; ++i) {
     const auto price = static_cast<Price>(std::round(priceDist(rng)));
     const auto side = (price < config.basePrice) ? Side::BUY : Side::SELL;
-    book->addOrder(1, nextMarketOrderId, nextMarketOrderId, side, price,
+    const ClientId clientId = 1;
+    book->addOrder(clientId, nextMarketOrderId, nextMarketOrderId, side, price,
                    qty_dist(rng));
-    activeOrders.push_back(nextMarketOrderId);
+    activeOrdersMap[nextMarketOrderId] = clientId;
+    activeOrdersVec.push_back(nextMarketOrderId);
     nextMarketOrderId++;
   }
-  std::println("Book pre-filled. Active orders: {}", activeOrders.size());
+  std::println("Book pre-filled. Active orders: {}", activeOrdersVec.size());
 
   auto start = std::chrono::high_resolution_clock::now();
-  auto results =
-      runSimulation(*book, rng, activeOrders, nextMarketOrderId, config);
+  auto results = runSimulation(*book, rng, activeOrdersMap, activeOrdersVec,
+                               nextMarketOrderId, config);
   auto end = std::chrono::high_resolution_clock::now();
 
   auto simulationTime = std::chrono::duration<double>(end - start).count();
