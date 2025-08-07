@@ -49,13 +49,17 @@ run_benchmarks() {
     echo "RUNNING BENCHMARKS FOR: $impl_name"
     echo "------------------------------------------------------------"
 
-    $bin_dir/marketSimulation "${impl_name}" add_heavy 500.0
-    $bin_dir/marketSimulation "${impl_name}" cancel_heavy 500.0
-    $bin_dir/marketSimulation "${impl_name}" match_heavy 500.0
+    local price_std=5.0
+    local events_number=2000000
+    $bin_dir/marketSimulation "${impl_name}" add_heavy $price_std $events_number
+    $bin_dir/marketSimulation "${impl_name}" cancel_heavy $price_std $events_number
+    $bin_dir/marketSimulation "${impl_name}" match_heavy $price_std $events_number
+    $bin_dir/marketSimulation "${impl_name}" balanced $price_std $events_number
     $bin_dir/fragmentation_benchmark "${impl_name}" 10000 500 1
     $bin_dir/sweep_benchmark "${impl_name}"
 
     mv latencies_*.txt $RESULTS_DIR/
+    mv simulation*.txt $RESULTS_DIR/
     echo "Latency data for '$impl_name' saved to '$RESULTS_DIR'."
 }
 

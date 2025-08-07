@@ -293,7 +293,7 @@ auto parseConfig(int argc, char **argv) -> SimulationConfig {
   } else if (scenario == "balanced") {
     config.orderToTradeRatio = 5;
     config.addProbabilityPercent = 60;
-    config.initialBookDepth = 20'000;
+    config.initialBookDepth = 500'000;
   } else {
     std::print(stderr, "Unknown scenario: {}\n", scenario);
     exit(1);
