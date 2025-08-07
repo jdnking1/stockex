@@ -161,7 +161,7 @@ TEST_F(OrderBookTest, NoMatchPriceMismatch) {
 }
 
 TEST_F(OrderBookTest, MatchMaxEventsLimit) {
-  for (models::OrderId i = 100; i < 100 + models::MAX_MATCH_EVENTS + 1; ++i) {
+  for (models::OrderId i = 0; i < models::MAX_MATCH_EVENTS + 1; ++i) {
     AddOrderAndVerify(1, i, i, SELL, 100, 10);
   }
   auto result = getOrderBook()->match(2, 200, BUY, 100, 10000);
