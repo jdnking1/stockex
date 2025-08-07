@@ -33,7 +33,7 @@ enum class OperationType { ADD, CANCEL, MATCH };
 
 struct LogEntry {
   OperationType type;
-  double latency_us;
+  double latency;
   OrderId orderId;
   Price price;
   Quantity quantity;
@@ -70,19 +70,19 @@ auto saveLogsToFile(const SimulationResults &results, std::ofstream &outputFile)
       outputFile << "ADD order " << log.orderId << " (price: " << log.price
                  << ", qty: " << log.quantity
                  << ", side: " << sideToString(log.side) << ") -> "
-                 << log.latency_us << " us\n";
+                 << log.latency << " us\n";
       break;
     case CANCEL:
       outputFile << "CANCEL order " << log.orderId << " (price: " << log.price
                  << ", qty: " << log.quantity
                  << ", side: " << sideToString(log.side) << ") -> "
-                 << log.latency_us << " us\n";
+                 << log.latency << " us\n";
       break;
     case MATCH:
       outputFile << "MATCH with order " << log.orderId
                  << " (price: " << log.price << ", qty: " << log.quantity
                  << ", side: " << sideToString(log.side) << ") -> "
-                 << log.latency_us << " us\n";
+                 << log.latency << " us\n";
       break;
     }
   }
@@ -132,10 +132,10 @@ auto handleAddOperation(
     std::vector<OrderId> &activeOrdersVec, OrderId &nextMarketOrderId,
     const SimulationConfig &config, SimulationResults &results,
     std::normal_distribution<> &priceDist,
-    std::uniform_int_distribution<Quantity> &qty_dist, std::mt19937 &rng)
+    std::uniform_int_distribution<Quantity> &qtyDist, std::mt19937 &rng)
     -> void {
   const auto price = static_cast<Price>(std::round(priceDist(rng)));
-  const auto quantity = qty_dist(rng);
+  const auto quantity = qtyDist(rng);
   const Side side = (price < config.basePrice) ? Side::BUY : Side::SELL;
   const ClientId clientId = 1;
   const OrderId newOrderId = nextMarketOrderId++;
@@ -193,11 +193,11 @@ auto handleMatchOperation(
     std::unordered_map<OrderId, ActiveOrderDetails> &activeOrdersMap,
     OrderId &nextMarketOrderId, const SimulationConfig &config,
     SimulationResults &results,
-    std::uniform_int_distribution<Quantity> &qty_dist, Side side,
+    std::uniform_int_distribution<Quantity> &qtyDist, Side side,
     std::mt19937 &rng) -> void {
   const Price price =
       (side == Side::SELL) ? (config.basePrice - 20) : (config.basePrice + 20);
-  const Quantity quantity = qty_dist(rng) * 5;
+  const Quantity quantity = qtyDist(rng) * 5;
   const OrderId matchOrderId = nextMarketOrderId++;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -228,7 +228,7 @@ auto runSimulation(
 
   std::uniform_int_distribution actionDist(1, config.orderToTradeRatio);
   std::uniform_int_distribution addCancelDist(1, 100);
-  std::uniform_int_distribution<Quantity> qty_dist(1, 100);
+  std::uniform_int_distribution<Quantity> qtyDist(1, 100);
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
 
   std::println("\n--- Starting simulation for {} events... ---",
@@ -240,7 +240,7 @@ auto runSimulation(
       if (addCancelDist(rng) <= config.addProbabilityPercent) {
         handleAddOperation(book, activeOrdersMap, activeOrdersVec,
                              nextMarketOrderId, config, results, priceDist,
-                             qty_dist, rng);
+                             qtyDist, rng);
       } else {
         handleCancelOperation(book, activeOrdersMap, activeOrdersVec, results,
                                 rng);
@@ -248,7 +248,7 @@ auto runSimulation(
     } else {
       const auto side = (i % 2 == 0) ? Side::SELL : Side::BUY;
       handleMatchOperation(book, activeOrdersMap, nextMarketOrderId, config,
-                             results, qty_dist, side, rng);
+                             results, qtyDist, side, rng);
     }
   }
   return results;
@@ -351,13 +351,13 @@ int main(int argc, char **argv) {
     switch (log.type) {
       using enum OperationType;
     case ADD:
-      addLatencies.push_back(log.latency_us);
+      addLatencies.push_back(log.latency);
       break;
     case CANCEL:
-      cancelLatencies.push_back(log.latency_us);
+      cancelLatencies.push_back(log.latency);
       break;
     case MATCH:
-      matchLatencies.push_back(log.latency_us);
+      matchLatencies.push_back(log.latency);
       break;
     }
   }
