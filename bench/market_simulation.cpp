@@ -54,10 +54,8 @@ struct ActiveOrderDetails {
   Side side;
 };
 
-// --- Logging ---
-
-inline auto saveLogsToFile(const SimulationResults &results,
-                           std::ofstream &outputFile) -> void {
+auto saveLogsToFile(const SimulationResults &results, std::ofstream &outputFile)
+    -> void {
   if (!outputFile.is_open()) {
     std::print(stderr, "Error: Log file is not open for writing.\n");
     return;
@@ -75,7 +73,6 @@ inline auto saveLogsToFile(const SimulationResults &results,
                  << log.latency_us << " us\n";
       break;
     case CANCEL:
-      // CANCEL log now includes full order details
       outputFile << "CANCEL order " << log.orderId << " (price: " << log.price
                  << ", qty: " << log.quantity
                  << ", side: " << sideToString(log.side) << ") -> "
@@ -94,9 +91,7 @@ inline auto saveLogsToFile(const SimulationResults &results,
              results.eventLogs.size());
 }
 
-// --- Simulation Logic ---
-
-inline auto prefillOrderBook(
+auto prefillOrderBook(
     stockex::engine::OrderBook &book, std::mt19937 &rng,
     std::unordered_map<OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<OrderId> &activeOrdersVec, OrderId &nextMarketOrderId,
@@ -105,42 +100,40 @@ inline auto prefillOrderBook(
   logFile << "-- Start Prefilling --\n";
 
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
-  std::uniform_int_distribution<Quantity> qty_dist(1, 100);
+  std::uniform_int_distribution<Quantity> qtyDist(1, 100);
 
   for (std::size_t i = 0; i < config.initialBookDepth; ++i) {
     const auto price = static_cast<Price>(std::round(priceDist(rng)));
-    const auto quantity = qty_dist(rng);
+    const auto quantity = qtyDist(rng);
     const auto side = (price < config.basePrice) ? Side::BUY : Side::SELL;
     const ClientId clientId = 1;
     const OrderId orderId = nextMarketOrderId;
 
     book.addOrder(clientId, orderId, orderId, side, price, quantity);
 
-    // Store full details for potential cancellation
     activeOrdersMap[orderId] = {clientId, price, quantity, side};
     activeOrdersVec.push_back(orderId);
     nextMarketOrderId++;
 
-    // Log prefill data directly to the file
     logFile << "PREFILL order " << orderId << " (price: " << price
             << ", qty: " << quantity << ", side: " << sideToString(side)
             << ")\n";
   }
   logFile << "-- End Prefilling --\n";
 
-  std::print(
+  std::println(
       "Successfully pre-filled order book with {} orders and logged them.\n",
       config.initialBookDepth);
 }
 
-void handle_add_operation(
+auto handleAddOperation(
     stockex::engine::OrderBook &book,
     std::unordered_map<OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<OrderId> &activeOrdersVec, OrderId &nextMarketOrderId,
     const SimulationConfig &config, SimulationResults &results,
     std::normal_distribution<> &priceDist,
-    std::uniform_int_distribution<Quantity> &qty_dist, std::mt19937 &rng) {
-
+    std::uniform_int_distribution<Quantity> &qty_dist, std::mt19937 &rng)
+    -> void {
   const auto price = static_cast<Price>(std::round(priceDist(rng)));
   const auto quantity = qty_dist(rng);
   const Side side = (price < config.basePrice) ? Side::BUY : Side::SELL;
@@ -160,11 +153,11 @@ void handle_add_operation(
   results.adds++;
 }
 
-void handle_cancel_operation(
+auto handleCancelOperation(
     stockex::engine::OrderBook &book,
     std::unordered_map<OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<OrderId> &activeOrdersVec, SimulationResults &results,
-    std::mt19937 &rng) {
+    std::mt19937 &rng) -> void {
   if (activeOrdersVec.empty()) {
     return;
   }
@@ -174,7 +167,6 @@ void handle_cancel_operation(
   auto vecIdx = cancelIndexDist(rng);
   OrderId orderToCancel = activeOrdersVec[vecIdx];
 
-  // Swap and pop for O(1) removal from vector
   activeOrdersVec[vecIdx] = activeOrdersVec.back();
   activeOrdersVec.pop_back();
 
@@ -189,7 +181,6 @@ void handle_cancel_operation(
 
     auto latency =
         std::chrono::duration<double, std::micro>(end - start).count();
-    // Log with full details
     results.eventLogs.emplace_back(OperationType::CANCEL, latency,
                                    orderToCancel, orderDetails.price,
                                    orderDetails.quantity, orderDetails.side);
@@ -197,14 +188,13 @@ void handle_cancel_operation(
   }
 }
 
-void handle_match_operation(
+auto handleMatchOperation(
     stockex::engine::OrderBook &book,
     std::unordered_map<OrderId, ActiveOrderDetails> &activeOrdersMap,
     OrderId &nextMarketOrderId, const SimulationConfig &config,
     SimulationResults &results,
     std::uniform_int_distribution<Quantity> &qty_dist, Side side,
-    std::mt19937 &rng) {
-
+    std::mt19937 &rng) -> void {
   const Price price =
       (side == Side::SELL) ? (config.basePrice - 20) : (config.basePrice + 20);
   const Quantity quantity = qty_dist(rng) * 5;
@@ -248,16 +238,16 @@ auto runSimulation(
 
     if (eventType < config.orderToTradeRatio) {
       if (addCancelDist(rng) <= config.addProbabilityPercent) {
-        handle_add_operation(book, activeOrdersMap, activeOrdersVec,
-                             nextMarketOrderId, config, results, priceDist, qty_dist,
-                             rng);
+        handleAddOperation(book, activeOrdersMap, activeOrdersVec,
+                             nextMarketOrderId, config, results, priceDist,
+                             qty_dist, rng);
       } else {
-        handle_cancel_operation(book, activeOrdersMap, activeOrdersVec, results,
+        handleCancelOperation(book, activeOrdersMap, activeOrdersVec, results,
                                 rng);
       }
     } else {
       const auto side = (i % 2 == 0) ? Side::SELL : Side::BUY;
-      handle_match_operation(book, activeOrdersMap, nextMarketOrderId, config,
+      handleMatchOperation(book, activeOrdersMap, nextMarketOrderId, config,
                              results, qty_dist, side, rng);
     }
   }
@@ -303,7 +293,7 @@ auto parseConfig(int argc, char **argv) -> SimulationConfig {
   } else if (scenario == "balanced") {
     config.orderToTradeRatio = 5;
     config.addProbabilityPercent = 60;
-    config.initialBookDepth = 1'000;
+    config.initialBookDepth = 20'000;
   } else {
     std::print(stderr, "Unknown scenario: {}\n", scenario);
     exit(1);
@@ -327,7 +317,6 @@ int main(int argc, char **argv) {
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
   std::mt19937 rng(42);
 
-  // The map now stores full order details for better logging
   std::unordered_map<OrderId, ActiveOrderDetails> activeOrdersMap;
   std::vector<OrderId> activeOrdersVec;
   OrderId nextMarketOrderId{};

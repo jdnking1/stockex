@@ -12,7 +12,7 @@ namespace stockex::models {
 // ==========================================================================
 // This preprocessor block will select which OrderQueue implementation to use.
 // If the USE_BITMAP_QUEUE macro is defined during compilation, it will use
-// Bitmap queue. Otherwise, it will default to the Soft Delete implementation.
+// Bitmap queue. otherwise the linear scan queues
 // ==========================================================================
 
 #ifdef USE_BITMAP_QUEUE
