@@ -164,10 +164,8 @@ public:
       long wordIndex = currentIndex / BitsPerWord;
 
       while (wordIndex >= 0) {
-        std::uint64_t word = currentChunk->validityBitmap[wordIndex];
-        word &= (1ULL << ((currentIndex % BitsPerWord) + 1)) - 1;
 
-        if (word != 0) {
+        if (std::uint64_t word = currentChunk->validityBitmap[wordIndex]; word != 0) {
           const auto lastBitOffset = (BitsPerWord - 1) - _lzcnt_u64(word);
           const auto foundIndex = wordIndex * BitsPerWord + lastBitOffset;
           return &currentChunk->orders[foundIndex];
