@@ -7,10 +7,6 @@ The core of the engine is a custom-built order book that leverages cache-friendl
 ## Key Features & Architecture 🚀
 
 * **High-Performance Matching Engine:** A fully functional order book that can handle limit orders for a single instrument.
-* **Dual `OrderQueue` Implementations:** The system can be compiled with one of two queue implementations for performance comparison. Both queues use lazy deletion but differ in the way they track deleted orders:
-    * **Bitmap Queue (Default):** Uses `std::uint64_t` bitmaps and CPU intrinsics (`_tzcnt_u64`, `_lzcnt_u64`) for `O(1)` order cancellations and extremely fast iteration over active orders, even in highly fragmented queues.
-    * **Linear Scan Queue:** This implementation uses a simple boolean flag to check order validity and uses a linear scan to iterate over active orders.
-* **Cache-Friendly Design:** Utilizes a direct-mapped `std::array` for `O(1)` price-level lookups and chunked data structures to ensure high memory locality.
 * **Custom Memory Pools:** Avoids system call overhead from frequent `new`/`delete` calls by using efficient, pre-allocated memory pools for `PriceLevel` and `OrderQueue` chunks.
 * **Detailed Benchmarking Suite:** Includes multiple benchmarks to test performance under various realistic market scenarios.
 

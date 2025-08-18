@@ -18,7 +18,6 @@ echo "Benchmark results will be saved in the '$RESULTS_DIR' directory."
 
 build_project() {
     local impl_name=$1
-    local build_flag=$2 
 
     echo
     echo "============================================================"
@@ -26,12 +25,12 @@ build_project() {
     echo "============================================================"
 
     rm -rf build
-    cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_BITMAP=$build_flag &> /dev/null
+    cmake -B build -DCMAKE_BUILD_TYPE=Release  &> /dev/null
 
     echo
     echo "BUILDING: $impl_name (Compiler output hidden)"
     echo "------------------------------------------------------------"
-    cmake --build build -j &> /dev/null
+    cmake --build build -j 
     echo "Build complete."
 }
 
@@ -49,7 +48,7 @@ run_benchmarks() {
     echo "RUNNING BENCHMARKS FOR: $impl_name"
     echo "------------------------------------------------------------"
 
-    local price_std=5.0
+    local price_std=150.0
     local events_number=2000000
     $bin_dir/marketSimulation "${impl_name}" add_heavy $price_std $events_number
     $bin_dir/marketSimulation "${impl_name}" cancel_heavy $price_std $events_number
@@ -63,11 +62,8 @@ run_benchmarks() {
     echo "Latency data for '$impl_name' saved to '$RESULTS_DIR'."
 }
 
-build_project "bitmap" "ON"
-run_benchmarks "bitmap"
-
-build_project "linear_scan" "OFF"
-run_benchmarks "linear_scan"
+build_project "bitmap_chunked_queueSIMD"
+run_benchmarks "bitmap_chunked_queueSIMD"
 
 echo
 echo "============================================================"
