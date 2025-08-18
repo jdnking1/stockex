@@ -7,14 +7,12 @@ import re
 
 def parse_filename(filename):
     """Parses benchmark metadata from the latency filename."""
-    # Market Simulation: latencies_add_bitmap_add_heavy_5.txt
-    market_sim_match = re.match(r"latencies_(add|cancel|match)_(bitmap|linear_scan)_(.*)_(\d+)\.txt", filename)
+    market_sim_match = re.match(r"latencies_(add|cancel|match)_(bitmap_chunked_queueSIMD)_(.*)_(\d+)\.txt", filename)
     if market_sim_match:
         metric, implementation, scenario, _ = market_sim_match.groups()
         return {"metric": metric, "implementation": implementation, "scenario": scenario}
 
-    # Other tests: latencies_fragmentation_test_bitmap.txt or latencies_sweep_test_bitmap.txt
-    other_test_match = re.match(r"latencies_(.*)_(bitmap|linear_scan)\.txt", filename)
+    other_test_match = re.match(r"latencies_(.*)_(bitmap_chunked_queueSIMD)\.txt", filename)
     if other_test_match:
         test_name, implementation = other_test_match.groups()
         metric_name = test_name.replace('_test', '')

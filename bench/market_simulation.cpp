@@ -239,16 +239,16 @@ auto runSimulation(
     if (eventType < config.orderToTradeRatio) {
       if (addCancelDist(rng) <= config.addProbabilityPercent) {
         handleAddOperation(book, activeOrdersMap, activeOrdersVec,
-                             nextMarketOrderId, config, results, priceDist,
-                             qtyDist, rng);
+                           nextMarketOrderId, config, results, priceDist,
+                           qtyDist, rng);
       } else {
         handleCancelOperation(book, activeOrdersMap, activeOrdersVec, results,
-                                rng);
+                              rng);
       }
     } else {
       const auto side = (i % 2 == 0) ? Side::SELL : Side::BUY;
       handleMatchOperation(book, activeOrdersMap, nextMarketOrderId, config,
-                             results, qtyDist, side, rng);
+                           results, qtyDist, side, rng);
     }
   }
   return results;
@@ -281,19 +281,19 @@ auto parseConfig(int argc, char **argv) -> SimulationConfig {
   if (auto scenario = config.scenarioName; scenario == "add_heavy") {
     config.orderToTradeRatio = 50;
     config.addProbabilityPercent = 80;
-    config.initialBookDepth = 100'000;
+    config.initialBookDepth = 10'000;
   } else if (scenario == "cancel_heavy") {
     config.orderToTradeRatio = 50;
     config.addProbabilityPercent = 20;
-    config.initialBookDepth = 1'000'000;
+    config.initialBookDepth = 25'000;
   } else if (scenario == "match_heavy") {
     config.orderToTradeRatio = 5;
     config.addProbabilityPercent = 55;
-    config.initialBookDepth = 1'000'000;
+    config.initialBookDepth = 10'000;
   } else if (scenario == "balanced") {
     config.orderToTradeRatio = 5;
     config.addProbabilityPercent = 60;
-    config.initialBookDepth = 500'000;
+    config.initialBookDepth = 10'000;
   } else {
     std::print(stderr, "Unknown scenario: {}\n", scenario);
     exit(1);
