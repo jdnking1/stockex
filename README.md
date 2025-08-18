@@ -1,37 +1,51 @@
-# StockeX: An Ultra-Low-Latency HFT Simulator
+# StockeX: An Low-Latency C++23 Matching Engine
 
-StockeX is a high-performance, C++23 stock exchange matching engine built from the ground up. It's designed to research and implement ultra-low-latency trading systems, capable of processing millions of events per second with predictable, nanosecond-level performance.
+StockeX is a high-performance C++23 stock exchange matching engine simulator engineered from the ground up for **low-latency** performance. It serves as a research platform for implementing and testing advanced trading system architectures capable of processing millions of events per second with predictable, nanosecond-level determinism.
 
-The core of the engine is a custom-built order book that leverages cache-friendly data structures, custom memory management, and modern CPU features to minimize latency for adding, canceling, and matching orders.
+The engine's core is a novel order book implementation that leverages cache-friendly data structures, custom memory management, and modern CPU intrinsics (AVX2, BMI1) to achieve extreme performance in adding, canceling, and matching orders.
 
 ## Key Features & Architecture 🚀
 
-* **High-Performance Matching Engine:** A fully functional order book that can handle limit orders for a single instrument.
-* **Custom Memory Pools:** Avoids system call overhead from frequent `new`/`delete` calls by using efficient, pre-allocated memory pools for `PriceLevel` and `OrderQueue` chunks.
-* **Detailed Benchmarking Suite:** Includes multiple benchmarks to test performance under various realistic market scenarios.
+The architecture is meticulously designed to minimize latency at every stage of an order's lifecycle.
+
+* **High-Throughput Order Book**: A fully featured order book that supports limit orders for a single instrument, designed for high-frequency trading scenarios.
+* **SIMD-Accelerated Order Queue**: The `OrderQueue` is a custom-built, cache-friendly data structure that uses a bitmap-based validity check.
+    * It avoids linear scanning by using **AVX2** intrinsics to check 256 bits (4 x 64-bit words) of the validity bitmap at a time.
+    * It leverages the `_tzcnt_u64` intrinsic (BMI1) to instantly find the next active order in the bitmap, making iteration O(1) in the best case.
+* **Custom Memory Pool**: A highly efficient, pre-allocated `MemoryPool` is used for all `PriceLevel` and `OrderQueue` chunks. This strategy virtually eliminates the overhead of expensive system calls like `new` and `delete` during trading sessions.
+* **Detailed Benchmarking Suite**: The project includes a comprehensive suite to measure performance under various realistic market conditions, including different order-to-trade ratios and queue fragmentation scenarios.
+* **CI Integration**: A GitHub Actions workflow automatically builds and runs the test suite with multiple modern compilers (GCC 14, Clang 18) to ensure code quality and stability.
 
 ## Tech Stack 🛠️
 
-* **Core:** C++23
-* **Build System:** CMake (v3.20+)
-* **CPU Architecture:** x86-64 with **Haswell instruction set** or newer (required for BMI1 intrinsics like `_tzcnt_u64`).
-* **Analysis:** Python 3, Pandas, Matplotlib, Seaborn
+* **Core Language**: **C++23**
+* **Build System**: **CMake** (v3.20+)
+* **CPU Architecture**: **x86-64** with the **Haswell instruction set** or newer is required.
+    * This is necessary for the AVX2 and BMI1 intrinsics (`_mm256_testz_si256`, `_tzcnt_u64`) which are critical for performance.
+* **Analysis & Visualization**: **Python 3**, Pandas, Matplotlib, Seaborn.
+
+---
 
 ## Quickstart: Automated Benchmarking & Visualization
 
-This is the recommended workflow for testing the engine.
+This is the recommended workflow for a comprehensive performance analysis.
 
 ### Step 1: Install Prerequisites
 
-* **C++:** A C++23 compliant compiler (e.g., GCC 12+, Clang 15+) and CMake (v3.20+).
-* **Python:** Python 3 and the required analysis libraries.
+* **C++ Compiler**: A C++23 compliant compiler (e.g., GCC 12+, Clang 15+) and CMake (v3.20+).
+* **Python Libraries**: The required libraries for analysis and plotting.
     ```bash
     pip install pandas matplotlib seaborn
+    ```
+* **libuv**: A multi-platform support library with a focus on asynchronous I/O.
+    ```bash
+    # Example on Ubuntu
+    sudo apt-get install libuv1-dev
     ```
 
 ### Step 2: Run the Full Suite
 
-A single bash script handles the entire process: building both C++ implementations, running all benchmarks, and generating the final plots.
+A single bash script automates the entire process: building the C++ application, running all benchmarks, and generating comparative plots.
 
 1.  **Make the script executable:**
     ```bash
@@ -42,7 +56,19 @@ A single bash script handles the entire process: building both C++ implementatio
     ./scripts/run_benchmarks.sh
     ```
 
-Upon completion, all raw latency data will be in the `benchmark_results/` directory, and the comparative plots will be saved in `benchmark_plots/`.
+When the script finishes, all raw latency data files will be in the `benchmark_results/` directory, and the final plots will be saved in `benchmark_plots/`.
+
+---
+
+## Benchmarking Scenarios
+
+The suite includes several distinct benchmarks to stress-test the engine under different conditions.
+
+| Benchmark Executable      | Description                                                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketSimulation`        | Simulates four different market scenarios: **add-heavy**, **cancel-heavy**, **match-heavy**, and **balanced** to test general performance. |
+| `fragmentation_benchmark` | Measures performance when the order queue is highly fragmented (i.e., many orders have been added and canceled).                         |
+| `sweep_benchmark`         | Tests the engine's ability to match a large quantity against thousands of smaller resting orders in a single, aggressive sweep.          |
 
 ## Advanced Usage
 
@@ -51,12 +77,13 @@ Upon completion, all raw latency data will be in the `benchmark_results/` direct
 For more targeted analysis, the `latency_analyser.py` script can plot one or more specific result files against each other. It can either save the plot to a file or display it in an interactive window.
 
 **Example 1: Save a Comparison Plot to a File**
+
 ```bash
 python scripts/latency_analyser.py \
-    benchmark_results/latencies_add_bitmap_add_heavy_5.txt \
-    benchmark_results/latencies_add_linear_scan_add_heavy_5.txt \
-    -o add_latency_comparison.png \
-    -t "Add Latency: Bitmap vs. Linear Scan"
+    benchmark_results/latencies_add_bitmap_chunked_queueSIMD_add_heavy_150.txt \
+    benchmark_results/latencies_cancel_bitmap_chunked_queueSIMD_cancel_heavy_150.txt \
+    -o custom_comparison.png \
+    -t "Add vs. Cancel Latency"
 ```
 
 **Example 2: Show an Interactive Plot for Exploration**
@@ -91,7 +118,6 @@ The core matching engine and data structures are complete and heavily benchmarke
 
 * [ ] **Networking Layer:** Implement a TCP/UDP server for order entry and market data dissemination.
 * [ ] **Inter-thread Communication:** Design and build robust, lock-free communication protocols for a multi-threaded architecture.
-* [ ] **CI Integration:** Add a GitHub Actions workflow to automatically run benchmarks on every push.
 
 ## License
 
