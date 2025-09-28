@@ -95,6 +95,84 @@ public:
     return &headChunk_->orders[headOrderIndex_];
   }
 
+  [[nodiscard]] auto empty() const noexcept -> bool { return totalSize_ == 0; }
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return totalSize_; }
+
+private:
+  auto allocateNewChunk() noexcept -> void {
+    auto *newChunk = allocator_.alloc();
+    if (headChunk_ == nullptr) {
+      headChunk_ = tailChunk_ = newChunk;
+    } else {
+      tailChunk_->next = newChunk;
+      newChunk->prev = tailChunk_;
+      tailChunk_ = newChunk;
+    }
+  }
+
+  auto findNextValidIndexInChunk() const noexcept -> std::optional<size_t> {
+    auto wordIndex = headOrderIndex_ / BitsPerWord;
+    const auto &bitmap = headChunk_->validityBitmap;
+
+    // Use AVX2 to quickly skip 256-bit (4-word) segments that are all zero.
+    constexpr size_t WordsPerSimdReg = 4;
+    while (wordIndex + WordsPerSimdReg <= NumBitmapWords) {
+      const __m256i bitmapSegment = _mm256_loadu_si256(
+          reinterpret_cast<const __m256i *>(&bitmap[wordIndex]));
+
+      if (auto flag = _mm256_testz_si256(bitmapSegment, bitmapSegment);
+          flag == 0) {
+        break;
+      }
+      wordIndex += WordsPerSimdReg;
+    }
+
+    // Scalar check for the remaining words or after finding a non-empty
+    // segment.
+    while (wordIndex < NumBitmapWords && bitmap[wordIndex] == 0) {
+      wordIndex++;
+    }
+
+    // Pinpoint the exact bit in the non-zero word.
+    if (wordIndex < NumBitmapWords) {
+      const auto bitOffsetInWord = std::countr_zero(bitmap[wordIndex]);
+      const size_t newIndex = wordIndex * BitsPerWord + bitOffsetInWord;
+      if (newIndex < headChunk_->highWaterMark) {
+        return newIndex;
+      }
+    }
+
+    return std::nullopt;
+  }
+
+  auto advanceHead() noexcept -> void {
+    while (headChunk_ != nullptr) {
+      if (auto nextIndex = findNextValidIndexInChunk(); nextIndex.has_value()) {
+        headOrderIndex_ = *nextIndex;
+        return;
+      }
+
+      Chunk *oldHead = headChunk_;
+      headChunk_ = headChunk_->next;
+      allocator_.free(oldHead);
+
+      if (headChunk_ != nullptr) {
+        headChunk_->prev = nullptr;
+        headOrderIndex_ = 0;
+      } else {
+        tailChunk_ = nullptr;
+        headOrderIndex_ = 0;
+      }
+    }
+  }
+
+  Allocator &allocator_{};
+  Chunk *headChunk_{};
+  Chunk *tailChunk_{};
+  std::size_t headOrderIndex_{};
+  std::size_t totalSize_{};
+
+public:
   [[nodiscard]] auto front() const noexcept -> const BasicOrder * {
     if (empty()) {
       return nullptr;
@@ -170,81 +248,5 @@ public:
 
     return nullptr;
   }
-
-  [[nodiscard]] auto empty() const noexcept -> bool { return totalSize_ == 0; }
-  [[nodiscard]] auto size() const noexcept -> std::size_t { return totalSize_; }
-
-private:
-  auto allocateNewChunk() noexcept -> void {
-    auto *newChunk = allocator_.alloc();
-    if (headChunk_ == nullptr) {
-      headChunk_ = tailChunk_ = newChunk;
-    } else {
-      tailChunk_->next = newChunk;
-      newChunk->prev = tailChunk_;
-      tailChunk_ = newChunk;
-    }
-  }
-
-  auto findNextValidIndexInChunk() const noexcept -> std::optional<size_t> {
-    auto wordIndex = headOrderIndex_ / BitsPerWord;
-    const auto &bitmap = headChunk_->validityBitmap;
-
-    // Use AVX2 to quickly skip 256-bit (4-word) segments that are all zero.
-    constexpr size_t WordsPerSimdReg = 4;
-    while (wordIndex + WordsPerSimdReg <= NumBitmapWords) {
-      const __m256i bitmapSegment = _mm256_loadu_si256(
-          reinterpret_cast<const __m256i *>(&bitmap[wordIndex]));
-
-      if (auto flag = _mm256_testz_si256(bitmapSegment, bitmapSegment);
-          flag == 0) {
-        break;
-      }
-      wordIndex += WordsPerSimdReg;
-    }
-
-    // Scalar check for the remaining words or after finding a non-empty segment.
-    while (wordIndex < NumBitmapWords && bitmap[wordIndex] == 0) {
-      wordIndex++;
-    }
-
-    // Pinpoint the exact bit in the non-zero word.
-    if (wordIndex < NumBitmapWords) {
-      const auto bitOffsetInWord = std::countr_zero(bitmap[wordIndex]);
-      const size_t newIndex = wordIndex * BitsPerWord + bitOffsetInWord;
-      if (newIndex < headChunk_->highWaterMark) {
-        return newIndex;
-      }
-    }
-
-    return std::nullopt;
-  }
-
-  auto advanceHead() noexcept -> void {
-    while (headChunk_ != nullptr) {
-      if (auto nextIndex = findNextValidIndexInChunk(); nextIndex.has_value()) {
-        headOrderIndex_ = *nextIndex;
-        return;
-      }
-
-      Chunk *oldHead = headChunk_;
-      headChunk_ = headChunk_->next;
-      allocator_.free(oldHead);
-
-      if (headChunk_ != nullptr) {
-        headChunk_->prev = nullptr;
-        headOrderIndex_ = 0;
-      } else {
-        tailChunk_ = nullptr;
-        headOrderIndex_ = 0;
-      }
-    }
-  }
-
-  Allocator &allocator_{};
-  Chunk *headChunk_{};
-  Chunk *tailChunk_{};
-  std::size_t headOrderIndex_{};
-  std::size_t totalSize_{};
 };
 } // namespace stockex::models
