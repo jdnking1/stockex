@@ -4,6 +4,11 @@ StockeX is a high-performance C++23 stock exchange matching engine simulator eng
 
 The engine's core is a novel order book implementation that leverages cache-friendly data structures, custom memory management, and modern CPU intrinsics (AVX2, BMI1) to achieve extreme performance in adding, canceling, and matching orders.
 
+## Results
+![Match Latency](assets/distribution_match.png)
+![Cancel Latency](assets/distribution_cancel.png)
+![Add Latency](assets/distribution_add.png)
+
 ## Key Features & Architecture 🚀
 
 The architecture is meticulously designed to minimize latency at every stage of an order's lifecycle.

@@ -13,7 +13,6 @@ string(APPEND CMAKE_CXX_FLAGS "-Wall -Wextra -Werror -Wpedantic -march=haswell")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 include(NoInSourceBuilds)
-include(Libuv)
 
 include_directories(${PROJECT_SOURCE_DIR}/src)
 

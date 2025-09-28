@@ -45,16 +45,6 @@ jobs:
           sudo ./llvm.sh 18
           sudo apt-get install -y clang-18
         fi
-    - name: Install libuv
-      run: |
-        wget https://github.com/libuv/libuv/archive/refs/tags/v1.49.2.tar.gz
-        tar -xvzf v1.49.2.tar.gz
-        cd libuv-1.49.2
-        sh autogen.sh
-        ./configure
-        make
-        make check
-        sudo make install
         
     - name: Configure CMake
       run: >
