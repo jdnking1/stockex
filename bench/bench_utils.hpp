@@ -82,16 +82,18 @@ inline auto printMetrics(std::vector<double> &latencies, size_t totalOps)
       latencies.begin(), latencies.end(), 0.0,
       [avg](double acc, double v) { return acc + (v - avg) * (v - avg); });
   auto stddev = std::sqrt(var / size);
-  auto throughput = static_cast<double>(totalOps) / (sum / 1'000'000.0);
 
-  std::print("Total time: {} us\n", sum);
+  
+  auto throughput = static_cast<double>(totalOps) / (sum / 1'000'000'000.0);
+
+  std::print("Total time: {} ns\n", sum);
   std::print("Total ops: {}\n", totalOps);
-  std::print("Average latency: {} us\n", avg);
-  std::print("99th percentile latency: {} us\n", p99);
-  std::print("99.9th percentile latency: {} us\n", p999);
-  std::print("Min latency: {} us\n", minLat);
-  std::print("Max latency: {} us\n", maxLat);
-  std::print("Standard deviation: {} us\n", stddev);
+  std::print("Average latency: {} ns\n", avg);
+  std::print("99th percentile latency: {} ns\n", p99);
+  std::print("99.9th percentile latency: {} ns\n", p999);
+  std::print("Min latency: {} ns\n", minLat);
+  std::print("Max latency: {} ns\n", maxLat);
+  std::print("Standard deviation: {} ns\n", stddev);
   std::print("Throughput: {} ops/sec\n", throughput);
 }
 
