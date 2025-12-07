@@ -1,11 +1,5 @@
 add_executable(marketSimulation market_simulation.cpp)
 target_link_libraries(marketSimulation PRIVATE libexchange)
 
-add_executable(fragmentation_benchmark benchmark_fragmentation.cpp)
-target_link_libraries(fragmentation_benchmark PRIVATE libexchange)
-
-add_executable(sweep_benchmark benchmark_sweep.cpp)
-target_link_libraries(sweep_benchmark PRIVATE libexchange)
-
 add_executable(simulation_generator simulation_generator.cpp)
 target_link_libraries(simulation_generator PRIVATE libexchange)

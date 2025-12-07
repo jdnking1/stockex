@@ -165,12 +165,14 @@ int main(int argc, char **argv) {
     case EventType::MATCH:
       _mm_lfence();
       start = __rdtsc();
-      [[maybe_unused]] volatile auto res =
+      auto res =
           book->match(evt.clientId, evt.orderId, evt.side, evt.price, evt.qty);
       _mm_lfence();
       end = __rdtsc();
       _mm_lfence();
-      latenciesMatch.push_back(end - start);
+      if (res.remainingQuantity_ != evt.qty) {
+        latenciesMatch.push_back(end - start);
+      }
       break;
     }
   }
