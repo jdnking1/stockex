@@ -11,9 +11,9 @@
 namespace stockex::models {
 
 struct BasicOrder {
-  OrderId orderId_{};
-  Quantity qty_{};
-  ClientId clientId_{};
+  OrderId orderId_;
+  Quantity qty_;
+  ClientId clientId_;
 };
 
 template <std::size_t ChunkSize = QUEUE_CHUNK_SIZE> class OrderQueue;
@@ -30,11 +30,13 @@ public:
       (ChunkSize + BitsPerWord - 1) / BitsPerWord;
 
   struct Chunk {
-    std::array<BasicOrder, ChunkSize> orders{};
+    std::array<BasicOrder, ChunkSize> orders;
     std::array<std::uint64_t, NumBitmapWords> validityBitmap{};
     std::size_t highWaterMark{};
     Chunk *next{};
     Chunk *prev{};
+
+    Chunk() {};
   };
 
   using Handle = OrderHandle<ChunkSize>;
