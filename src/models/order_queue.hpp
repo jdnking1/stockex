@@ -88,11 +88,17 @@ public:
   }
 
   auto pop() noexcept -> void {
+    if (empty()) {
+      return;
+    }
     advanceHead();
     remove({headChunk_, headOrderIndex_});
   }
 
   [[nodiscard]] auto front() noexcept -> BasicOrder * {
+    if (empty()) {
+      return nullptr;
+    }
     advanceHead();
     return &headChunk_->orders[headOrderIndex_];
   }
@@ -112,11 +118,18 @@ private:
     }
   }
 
+  auto findValidIndexIn64Bit(size_t wordIndex,
+                             const std::array<uint64_t, NumBitmapWords> &bitmap)
+      const noexcept -> size_t {
+    const auto bitOffsetInWord = std::countr_zero(bitmap[wordIndex]);
+    const size_t newIndex = wordIndex * BitsPerWord + bitOffsetInWord;
+    return newIndex;
+  }
+
   auto findNextValidIndexInChunk() const noexcept -> std::optional<size_t> {
     auto wordIndex = headOrderIndex_ / BitsPerWord;
     const auto &bitmap = headChunk_->validityBitmap;
 
-    // Use AVX2 to quickly skip 256-bit (4-word) segments that are all zero.
     constexpr size_t WordsPerSimdReg = 4;
     while (wordIndex + WordsPerSimdReg <= NumBitmapWords) {
       const __m256i bitmapSegment = _mm256_loadu_si256(
@@ -129,19 +142,11 @@ private:
       wordIndex += WordsPerSimdReg;
     }
 
-    // Scalar check for the remaining words or after finding a non-empty
-    // segment.
-    while (wordIndex < NumBitmapWords && bitmap[wordIndex] == 0) {
-      wordIndex++;
-    }
-
-    // Pinpoint the exact bit in the non-zero word.
-    if (wordIndex < NumBitmapWords) {
-      const auto bitOffsetInWord = std::countr_zero(bitmap[wordIndex]);
-      const size_t newIndex = wordIndex * BitsPerWord + bitOffsetInWord;
-      if (newIndex < headChunk_->highWaterMark) {
-        return newIndex;
+    while (wordIndex < NumBitmapWords) {
+      if (bitmap[wordIndex] != 0) {
+        return findValidIndexIn64Bit(wordIndex, bitmap);
       }
+      wordIndex++;
     }
 
     return std::nullopt;

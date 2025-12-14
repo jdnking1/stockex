@@ -1,4 +1,3 @@
-#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -11,28 +10,6 @@
 #include "simulation_event.hpp"
 
 using namespace stockex::benchmarks;
-
-auto getNsPerCycle() -> double {
-  std::println("Calibrating RDTSC...");
-  auto startTime = std::chrono::steady_clock::now();
-  auto startCycles = __rdtsc();
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-  uint64_t endCycles = __rdtsc();
-  auto endTime = std::chrono::steady_clock::now();
-
-  auto durationNs =
-      std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime)
-          .count();
-  auto cycles = endCycles - startCycles;
-
-  auto nsPerCycle = static_cast<double>(durationNs) / cycles;
-  std::println("Detected TSC Frequency: {:.2f} GHz (1 cycle = {:.5f} ns)",
-               1.0 / nsPerCycle, nsPerCycle);
-
-  return nsPerCycle;
-}
 
 auto loadEvents(const std::string &filename) -> std::vector<SimulationEvent> {
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
@@ -85,6 +62,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // auto overhead = measureOverhead();
   auto nsPerCycle = getNsPerCycle();
 
   std::println("Loading dataset...");
@@ -122,12 +100,6 @@ int main(int argc, char **argv) {
 
   std::println("Starting Replay...");
 
-  // WARMUP
-  volatile auto dummy = 0;
-  for (const auto &e : events) {
-    dummy += e.orderId;
-  }
-
   for (const auto &evt : events) {
     uint64_t start;
     uint64_t end;
@@ -142,36 +114,27 @@ int main(int argc, char **argv) {
     case EventType::PREFILL:
       break;
     case EventType::ADD:
-      _mm_lfence();
-      start = __rdtsc();
-      book->addOrder(evt.clientId, evt.orderId, evt.orderId, evt.side,
-                     evt.price, evt.qty);
-      _mm_lfence();
-      end = __rdtsc();
-      _mm_lfence();
-      latenciesAdd.push_back(end - start);
+      BENCH_OP(latenciesAdd,
+               book->addOrder(evt.clientId, evt.orderId, evt.orderId, evt.side,
+                              evt.price, evt.qty));
       break;
 
     case EventType::CANCEL:
-      _mm_lfence();
-      start = __rdtsc();
-      book->removeOrder(evt.clientId, evt.orderId);
-      _mm_lfence();
-      end = __rdtsc();
-      _mm_lfence();
-      latenciesCancel.push_back(end - start);
+      BENCH_OP(latenciesCancel, book->removeOrder(evt.clientId, evt.orderId));
       break;
 
     case EventType::MATCH:
       _mm_lfence();
       start = __rdtsc();
+      _mm_lfence();
       auto res =
           book->match(evt.clientId, evt.orderId, evt.side, evt.price, evt.qty);
       _mm_lfence();
       end = __rdtsc();
       _mm_lfence();
       if (res.remainingQuantity_ != evt.qty) {
-        latenciesMatch.push_back(end - start);
+        auto raw = end - start;
+        latenciesMatch.push_back(raw);
       }
       break;
     }
