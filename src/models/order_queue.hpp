@@ -189,15 +189,16 @@ public:
     auto currentIndex = headOrderIndex_;
 
     while (currentChunk) {
-
       if (auto wordIndex = currentIndex / BitsPerWord;
           wordIndex < NumBitmapWords) {
+        
         auto word = currentChunk->validityBitmap[wordIndex];
+
         word &= ~((1ULL << (currentIndex % BitsPerWord)) - 1);
 
         while (wordIndex < NumBitmapWords) {
           if (word != 0) {
-            const auto nextBitOffset = _tzcnt_u64(word);
+            const auto nextBitOffset = std::countr_zero(word);
             const auto foundIndex = wordIndex * BitsPerWord + nextBitOffset;
             if (foundIndex < currentChunk->highWaterMark) {
               return &currentChunk->orders[foundIndex];
@@ -236,15 +237,13 @@ public:
       long wordIndex = currentIndex / BitsPerWord;
 
       while (wordIndex >= 0) {
-
         if (std::uint64_t word = currentChunk->validityBitmap[wordIndex];
             word != 0) {
-          const auto lastBitOffset = (BitsPerWord - 1) - _lzcnt_u64(word);
+          const auto lastBitOffset = (BitsPerWord - 1) - std::countl_zero(word);
           const auto foundIndex = wordIndex * BitsPerWord + lastBitOffset;
           return &currentChunk->orders[foundIndex];
         }
         wordIndex--;
-        currentIndex = wordIndex * BitsPerWord + (BitsPerWord - 1);
       }
 
       currentChunk = currentChunk->prev;

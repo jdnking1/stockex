@@ -43,7 +43,7 @@ void processAndSave(const std::vector<uint64_t> &cycles,
   std::vector<double> latenciesNs;
   latenciesNs.reserve(cycles.size());
   for (auto c : cycles)
-    latenciesNs.push_back(c * nsPerCycle);
+    latenciesNs.push_back(static_cast<double>(c) * nsPerCycle);
 
   std::println("\n--- {} Latency Statistics ---", name);
   stockex::benchmarks::printMetrics(latenciesNs, latenciesNs.size());
@@ -62,7 +62,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // auto overhead = measureOverhead();
   auto nsPerCycle = getNsPerCycle();
 
   std::println("Loading dataset...");
@@ -74,14 +73,15 @@ int main(int argc, char **argv) {
   auto countMatch = 0;
 
   for (const auto &e : events) {
+    using enum EventType;
     switch (e.type) {
-    case EventType::ADD:
+    case ADD:
       countAdd++;
       break;
-    case EventType::CANCEL:
+    case CANCEL:
       countCancel++;
       break;
-    case EventType::MATCH:
+    case MATCH:
       countMatch++;
       break;
     default:
