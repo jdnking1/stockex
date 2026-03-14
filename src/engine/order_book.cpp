@@ -1,24 +1,23 @@
 #include "order_book.hpp"
 
 namespace stockex::engine {
-auto OrderBook::addOrder(models::ClientId clientId,
-                         models::OrderId clientOrderId,
-                         models::OrderId marketOrderId, models::Side side,
+auto OrderBook::addOrder(models::ClientId clientId, models::Side side,
                          models::Price price,
-                         models::Quantity quantity) noexcept -> void {
+                         models::Quantity quantity) noexcept -> models::OrderId {
   auto *priceLevel = getPriceLevel(price);
 
   if (!priceLevel) {
     priceLevel = addPriceLevel(side, price);
   }
 
-  auto queueHandle = priceLevel->addOrder({clientOrderId, quantity, clientId});
-  clientOrders_[clientId][clientOrderId] = {queueHandle, marketOrderId, price};
+  auto orderId = allocateOrderId();
+  auto queueHandle = priceLevel->addOrder({orderId, quantity, clientId});
+  orders_[orderId] = {queueHandle, price};
+  return orderId;
 }
 
-auto OrderBook::removeOrder(models::ClientId clientId,
-                            models::OrderId orderId) noexcept -> void {
-  const auto &order = clientOrders_[clientId][orderId];
+auto OrderBook::removeOrder(models::OrderId orderId) noexcept -> void {
+  const auto &order = orders_[orderId];
   auto *priceLevel = getPriceLevel(order.price_);
   if (priceLevel) [[likely]] {
     priceLevel->removeOrder(order.queueHandle_);
@@ -26,10 +25,11 @@ auto OrderBook::removeOrder(models::ClientId clientId,
       removePriceLevel(priceLevel);
     }
   }
+  releaseOrderId(orderId);
 }
 
-auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
-                      models::Side side, models::Price price,
+auto OrderBook::match(models::ClientId clientId, models::Side side,
+                      models::Price price,
                       models::Quantity quantity) noexcept -> MatchResultSet {
   auto *&bestPriceLevel = (side == models::Side::BUY) ? bestAsk_ : bestBid_;
   auto remainingQuantity = quantity;
@@ -45,8 +45,7 @@ auto OrderBook::match(models::ClientId clientId, models::OrderId orderId,
     remainingQuantity -= matchedQty;
     matchedOrder->qty_ -= matchedQty;
 
-    matchResults_[matchCount] = {orderId,
-                                 matchedOrder->orderId_,
+    matchResults_[matchCount] = {matchedOrder->orderId_,
                                  bestPriceLevel->price_,
                                  matchedQty,
                                  matchedOrder->qty_,

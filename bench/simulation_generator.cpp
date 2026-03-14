@@ -83,7 +83,7 @@ auto handleAddOperation(
     std::vector<SimulationEvent> &events,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
-    models::OrderId &nextMarketOrderId, const SimulationConfig &config,
+    const SimulationConfig &config,
     std::normal_distribution<> &priceDist,
     std::uniform_int_distribution<models::Quantity> &qtyDist, std::mt19937 &rng,
     stockex::engine::OrderBook &book) -> void {
@@ -92,12 +92,11 @@ auto handleAddOperation(
   const models::Side side =
       (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
   const models::ClientId clientId = 1;
-  const models::OrderId newOrderId = nextMarketOrderId++;
-  activeOrdersMap[newOrderId] = {clientId, price, quantity, side};
-  activeOrdersVec.push_back(newOrderId);
-  events.emplace_back(newOrderId, price, quantity, side, EventType::ADD,
+  const auto orderId = book.addOrder(clientId, side, price, quantity);
+  activeOrdersMap[orderId] = {clientId, price, quantity, side};
+  activeOrdersVec.push_back(orderId);
+  events.emplace_back(orderId, price, quantity, side, EventType::ADD,
                       clientId);
-  book.addOrder(clientId, newOrderId, newOrderId, side, price, quantity);
 }
 
 auto handleCancelOperation(
@@ -128,7 +127,7 @@ auto handleCancelOperation(
       event.clientId = orderDetails.clientId;
       event.orderId = orderToCancel;
       events.push_back(event);
-      book.removeOrder(event.clientId, event.orderId);
+      book.removeOrder(event.orderId);
       return;
     }
   }
@@ -137,18 +136,17 @@ auto handleCancelOperation(
 auto handleMatchOperation(
     std::vector<SimulationEvent> &events,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
-    models::OrderId &nextMarketOrderId, const SimulationConfig &config,
+    const SimulationConfig &config,
     std::uniform_int_distribution<models::Quantity> &qtyDist, models::Side side,
     std::mt19937 &rng, stockex::engine::OrderBook &book) -> void {
   const models::Price price = (side == models::Side::SELL)
                                   ? (config.basePrice - 20)
                                   : (config.basePrice + 20);
   const models::Quantity quantity = qtyDist(rng) * 5;
-  const models::OrderId matchOrderId = nextMarketOrderId++;
 
-  events.emplace_back(matchOrderId, price, quantity, side, EventType::MATCH, 2);
+  events.emplace_back(0, price, quantity, side, EventType::MATCH, 2);
 
-  auto matchResult = book.match(2, matchOrderId, side, price, quantity);
+  auto matchResult = book.match(2, side, price, quantity);
 
   if (!matchResult.matches_.empty()) {
     std::ranges::for_each(matchResult.matches_,
@@ -162,7 +160,7 @@ auto generatePrefillData(
     std::vector<SimulationEvent> &events, std::mt19937 &rng,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
-    models::OrderId &nextMarketOrderId, const SimulationConfig &config,
+    const SimulationConfig &config,
     stockex::engine::OrderBook &book) -> void {
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
   std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
@@ -172,13 +170,10 @@ auto generatePrefillData(
     const auto quantity = qtyDist(rng);
     const auto side =
         (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
-    activeOrdersMap[nextMarketOrderId] = {1, price, quantity, side};
-    activeOrdersVec.push_back(nextMarketOrderId);
-    events.emplace_back(nextMarketOrderId, price, quantity, side,
-                        EventType::PREFILL, 1);
-    book.addOrder(1, nextMarketOrderId, nextMarketOrderId, side, price,
-                  quantity);
-    nextMarketOrderId++;
+    const auto orderId = book.addOrder(1, side, price, quantity);
+    activeOrdersMap[orderId] = {1, price, quantity, side};
+    activeOrdersVec.push_back(orderId);
+    events.emplace_back(orderId, price, quantity, side, EventType::PREFILL, 1);
   }
 }
 
@@ -186,7 +181,7 @@ auto generateSimulationData(
     std::vector<SimulationEvent> &events, std::mt19937 &rng,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
-    models::OrderId &nextMarketOrderId, const SimulationConfig &config,
+    const SimulationConfig &config,
     stockex::engine::OrderBook &book) -> void {
   std::uniform_int_distribution actionDist(1, config.orderToTradeRatio);
   std::uniform_int_distribution addCancelDist(1, 100);
@@ -199,7 +194,7 @@ auto generateSimulationData(
     if (eventType < config.orderToTradeRatio) {
       if (addCancelDist(rng) <= config.addProbabilityPercent) {
         handleAddOperation(events, activeOrdersMap, activeOrdersVec,
-                           nextMarketOrderId, config, priceDist, qtyDist, rng,
+                           config, priceDist, qtyDist, rng,
                            book);
       } else {
         handleCancelOperation(events, activeOrdersMap, activeOrdersVec, rng,
@@ -207,7 +202,7 @@ auto generateSimulationData(
       }
     } else {
       const auto side = (i % 2 == 0) ? models::Side::SELL : models::Side::BUY;
-      handleMatchOperation(events, activeOrdersMap, nextMarketOrderId, config,
+      handleMatchOperation(events, activeOrdersMap, config,
                            qtyDist, side, rng, book);
     }
   }
@@ -238,13 +233,11 @@ int main(int argc, char **argv) {
   std::vector<stockex::benchmarks::SimulationEvent> events;
   events.reserve(config.totalEvents);
 
-  stockex::models::OrderId nextMarketOrderId{};
-
   generatePrefillData(events, rng, activeOrdersMap, activeOrdersVec,
-                      nextMarketOrderId, config, *book);
+                      config, *book);
 
   generateSimulationData(events, rng, activeOrdersMap, activeOrdersVec,
-                         nextMarketOrderId, config, *book);
+                         config, *book);
 
   simulation_file.write(reinterpret_cast<const char *>(events.data()),
                         events.size() *

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <span>
+#include <vector>
 
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
@@ -12,7 +13,6 @@
 namespace stockex::engine {
 
 struct MatchResult {
-  models::OrderId incomingOrderId_{};
   models::OrderId matchedOrderId_{};
   models::Price price_{};
   models::Quantity quantity_{};
@@ -33,34 +33,30 @@ struct MatchResultSet {
 class OrderBook {
 public:
   explicit OrderBook(models::InstrumentId instrument)
-      : instrument_{instrument} {
-    clientOrders_.fill({models::MAX_NUM_ORDERS, models::OrderInfo{}});
-  }
+      : instrument_{instrument} {}
 
   OrderBook(const OrderBook &) = delete;
   OrderBook(OrderBook &&) = delete;
   OrderBook &operator=(const OrderBook &) = delete;
   OrderBook &operator=(OrderBook &&) = delete;
 
-  void addOrder(models::ClientId clientId, models::OrderId clientOrderId,
-                models::OrderId marketOrderId, models::Side side,
-                models::Price price, models::Quantity quantity) noexcept;
+  auto addOrder(models::ClientId clientId, models::Side side,
+                models::Price price, models::Quantity quantity) noexcept
+      -> models::OrderId;
 
-  void removeOrder(models::ClientId clientId, models::OrderId orderId) noexcept;
+  void removeOrder(models::OrderId orderId) noexcept;
 
   [[nodiscard]] MatchResultSet match(models::ClientId clientId,
-                                     models::OrderId orderId, models::Side side,
-                                     models::Price price,
+                                     models::Side side, models::Price price,
                                      models::Quantity quantity) noexcept;
 
   [[nodiscard]] auto getPriceIndex(models::Price price) const noexcept {
     return price % models::MAX_PRICE_LEVELS;
   }
 
-  [[nodiscard]] auto getOrder(models::ClientId clientId,
-                              models::OrderId orderId) const noexcept
+  [[nodiscard]] auto getOrder(models::OrderId orderId) const noexcept
       -> const models::OrderInfo & {
-    return clientOrders_[clientId][orderId];
+    return orders_[orderId];
   }
 
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
@@ -74,6 +70,21 @@ public:
   }
 
 private:
+  auto allocateOrderId() noexcept -> models::OrderId {
+    if (!freeList_.empty()) {
+      auto id = freeList_.back();
+      freeList_.pop_back();
+      return id;
+    }
+    auto id = nextId_++;
+    orders_.emplace_back();
+    return id;
+  }
+
+  auto releaseOrderId(models::OrderId id) noexcept -> void {
+    freeList_.push_back(id);
+  }
+
   auto addPriceLevel(models::Side side, models::Price price) noexcept
       -> models::PriceLevel *;
 
@@ -95,7 +106,9 @@ private:
 
   models::PriceLevelMap priceLevels_{};
 
-  models::ClientOrderMap clientOrders_{};
+  std::vector<models::OrderInfo> orders_;
+  std::vector<models::OrderId> freeList_;
+  models::OrderId nextId_{0};
 
   std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
 
