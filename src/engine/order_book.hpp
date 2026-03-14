@@ -32,8 +32,11 @@ struct MatchResultSet {
 
 class OrderBook {
 public:
-  explicit OrderBook(models::InstrumentId instrument)
-      : instrument_{instrument} {}
+  explicit OrderBook(models::InstrumentId instrument,
+                     std::size_t maxOrders = models::MAX_NUM_ORDERS)
+      : orders_(maxOrders), instrument_{instrument} {
+    freeList_.reserve(maxOrders);
+  }
 
   OrderBook(const OrderBook &) = delete;
   OrderBook(OrderBook &&) = delete;
@@ -76,9 +79,7 @@ private:
       freeList_.pop_back();
       return id;
     }
-    auto id = nextId_++;
-    orders_.emplace_back();
-    return id;
+    return nextId_++;
   }
 
   auto releaseOrderId(models::OrderId id) noexcept -> void {
