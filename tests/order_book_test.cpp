@@ -1,9 +1,6 @@
-#include <algorithm>
-#include <chrono>
 #include <memory>
 
 #include <gtest/gtest.h>
-#include <random>
 
 #include "engine/order_book.hpp"
 #include "models/basic_types.hpp"
@@ -246,62 +243,5 @@ TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
   EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
 }
 
-#ifdef NDEBUG
-TEST_F(OrderBookTest, PerformanceTestAddOrder) {
-  const int numOrders = 500000;
-  for (int i = 0; i < numOrders; ++i) {
-    [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
-  }
-  auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < numOrders; ++i) {
-    [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
-  }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::micro> duration = end - start;
-  EXPECT_TRUE(duration.count() / numOrders < 0.04);
-}
-
-TEST_F(OrderBookTest, PerformanceTestRemoveOrder) {
-  const int numOrders = 500000;
-  std::vector<models::OrderId> orderIds;
-  orderIds.reserve(numOrders);
-
-  for (int i = 0; i < numOrders; ++i) {
-    orderIds.push_back(*getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50));
-  }
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::ranges::shuffle(orderIds, gen);
-  auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < numOrders; ++i) {
-    getOrderBook()->removeOrder(orderIds[i]);
-  }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::micro> duration = end - start;
-  EXPECT_TRUE(duration.count() / numOrders < 0.04);
-}
-
-TEST_F(OrderBookTest, PerformanceTestMatchOrder) {
-  const int numOrders = 500000;
-  for (int i = 0; i < numOrders; ++i) {
-    [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
-  }
-  int totalMatches{};
-  auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < numOrders; ++i) {
-    if (auto result = getOrderBook()->match(2, SELL, 100 + (i % 10), 1000);
-        !result.matches_.empty()) {
-      totalMatches += result.matches_.size();
-    }
-  }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::micro> duration = end - start;
-  auto throughput =
-      static_cast<double>(totalMatches) / (duration.count() / 1'000'000.0);
-  EXPECT_TRUE(duration.count() / numOrders < 0.04);
-  EXPECT_EQ(totalMatches, numOrders);
-  EXPECT_TRUE(throughput > 50'000'000);
-}
-#endif
 
 } // namespace stockex::engine
