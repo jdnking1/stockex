@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <cassert>
 #include <optional>
 #include <immintrin.h>
 
@@ -51,7 +52,7 @@ public:
     Chunk *current = headChunk_;
     while (current != nullptr) {
       Chunk *next = current->next;
-      allocator_.free(current);
+      assert(allocator_.free(current) && "Bad free in OrderQueue destructor.");
       current = next;
     }
   }
@@ -62,8 +63,9 @@ public:
   OrderQueue &operator=(OrderQueue &&) = delete;
 
   auto push(BasicOrder order) -> Handle {
-    if (tailChunk_->highWaterMark >= ChunkSize) {
-      allocateNewChunk();
+    if (!tailChunk_ || tailChunk_->highWaterMark >= ChunkSize) {
+      if (!allocateNewChunk()) [[unlikely]]
+        return Handle{nullptr, 0};
     }
     const auto index = tailChunk_->highWaterMark;
     tailChunk_->orders[index] = order;
@@ -108,8 +110,10 @@ public:
   [[nodiscard]] auto size() const noexcept -> std::size_t { return totalSize_; }
 
 private:
-  auto allocateNewChunk() noexcept -> void {
+  auto allocateNewChunk() noexcept -> bool {
     auto *newChunk = allocator_.alloc();
+    if (!newChunk) [[unlikely]]
+      return false;
     if (headChunk_ == nullptr) {
       headChunk_ = tailChunk_ = newChunk;
     } else {
@@ -117,6 +121,7 @@ private:
       newChunk->prev = tailChunk_;
       tailChunk_ = newChunk;
     }
+    return true;
   }
 
   auto findValidIndexIn64Bit(size_t wordIndex,
@@ -162,7 +167,7 @@ private:
 
       Chunk *oldHead = headChunk_;
       headChunk_ = headChunk_->next;
-      allocator_.free(oldHead);
+      assert(allocator_.free(oldHead) && "Bad free in advanceHead.");
 
       if (headChunk_ != nullptr) {
         headChunk_->prev = nullptr;

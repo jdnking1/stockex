@@ -5,7 +5,9 @@
 int main() {
   stockex::utils::MemoryPool<double> x{22};
 
-  auto ptr = x.alloc(22);
+  auto *ptr = x.alloc(22);
+  if (!ptr)
+    return 1;
 
   std::print("w {}  {}\n", 23, *ptr);
 

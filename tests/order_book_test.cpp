@@ -18,7 +18,9 @@ protected:
   auto AddOrderAndVerify(models::ClientId clientId, models::Side side,
                          models::Price price, models::Quantity qty) const
       -> models::OrderId {
-    auto orderId = book_->addOrder(clientId, side, price, qty);
+    auto result = book_->addOrder(clientId, side, price, qty);
+    EXPECT_TRUE(result.has_value());
+    auto orderId = *result;
     auto &orderInfo = book_->getOrder(orderId);
     const auto *priceLevel = book_->getPriceLevel(price);
     auto bOrder = priceLevel->orders_.last();
@@ -85,14 +87,14 @@ TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
 
 TEST_F(OrderBookTest, RemoveOrder) {
   auto id = AddOrderAndVerify(1, BUY, 100, 50);
-  getOrderBook()->removeOrder(id);
+  EXPECT_TRUE(getOrderBook()->removeOrder(id).has_value());
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
 
 TEST_F(OrderBookTest, RemoveOrderFromMultiOrderPriceLevel) {
   auto id1 = AddOrderAndVerify(1, BUY, 100, 50);
   auto id2 = AddOrderAndVerify(1, BUY, 100, 30);
-  getOrderBook()->removeOrder(id1);
+  EXPECT_TRUE(getOrderBook()->removeOrder(id1).has_value());
   EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders_.front()->qty_, 30);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100)->orders_.front()->orderId_, id2);
 }
@@ -192,11 +194,30 @@ TEST_F(OrderBookTest, ComplexScenario) {
 }
 
 TEST_F(OrderBookTest, FreeListReusesIds) {
-  auto id1 = getOrderBook()->addOrder(1, BUY, 100, 50);
-  getOrderBook()->addOrder(1, BUY, 101, 30);
+  auto id1 = *getOrderBook()->addOrder(1, BUY, 100, 50);
+  (void)getOrderBook()->addOrder(1, BUY, 101, 30);
   getOrderBook()->removeOrder(id1);
-  auto id3 = getOrderBook()->addOrder(1, BUY, 102, 20);
+  auto id3 = *getOrderBook()->addOrder(1, BUY, 102, 20);
   EXPECT_EQ(id3, id1);
+}
+
+TEST_F(OrderBookTest, AddOrderOrderIdExhausted) {
+  // Create a book with capacity for 1 order
+  OrderBook tinyBook(1, 1);
+  auto r1 = tinyBook.addOrder(1, BUY, 100, 10);
+  ASSERT_TRUE(r1.has_value());
+  // Pool is now full and free list is empty
+  auto r2 = tinyBook.addOrder(1, BUY, 101, 10);
+  ASSERT_FALSE(r2.has_value());
+  EXPECT_EQ(r2.error(), OrderBookError::OrderIdExhausted);
+}
+
+TEST_F(OrderBookTest, RemoveOrderInvalidId) {
+  // Use an ID larger than orders_.size() to guarantee out-of-bounds
+  OrderBook tinyBook(1, 1);
+  auto result = tinyBook.removeOrder(999);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
 }
 
 #ifdef NDEBUG
@@ -220,7 +241,7 @@ TEST_F(OrderBookTest, PerformanceTestRemoveOrder) {
   orderIds.reserve(numOrders);
 
   for (int i = 0; i < numOrders; ++i) {
-    orderIds.push_back(getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50));
+    orderIds.push_back(*getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50));
   }
   std::random_device rd;
   std::mt19937 gen(rd());

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <vector>
@@ -23,10 +24,11 @@ public:
   }
 
   template <typename... Args> auto alloc(Args &&...args) -> T * {
-    ASSERT(freeBlockCount_ > 0, "No free memory blocks.");
+    if (freeBlockCount_ == 0) [[unlikely]]
+      return nullptr;
     auto memory_block = &memory_[freeBlockIndex_];
 #ifndef NDEBUG
-    ASSERT(memory_block->isFree_, "Memory block is not free.");
+    assert(memory_block->isFree_ && "Memory block is not free.");
     memory_block->isFree_ = false;
 #endif
     auto result = reinterpret_cast<T *>(&memory_block->data_);
@@ -37,10 +39,11 @@ public:
   }
 
   auto rawAlloc() -> T * {
-    ASSERT(freeBlockCount_ > 0, "No free memory blocks.");
+    if (freeBlockCount_ == 0) [[unlikely]]
+      return nullptr;
     auto *memory_block = &memory_[freeBlockIndex_];
 #ifndef NDEBUG
-    ASSERT(memory_block->isFree_, "Memory block is not free.");
+    assert(memory_block->isFree_ && "Memory block is not free.");
     memory_block->isFree_ = false;
 #endif
     std::size_t current_index = freeBlockIndex_;
@@ -49,19 +52,23 @@ public:
     return reinterpret_cast<T *>(&memory_[current_index].data_);
   }
 
-  auto free(T *ptr) -> void {
+  auto free(T *ptr) -> bool {
     std::size_t block_index =
         reinterpret_cast<const MemoryBlock *>(ptr) - &memory_[0];
-    ASSERT(block_index < memory_.size(), "Invalid memory block index.");
+    if (block_index >= memory_.size()) [[unlikely]] {
+      assert(false && "Invalid memory block index.");
+      return false;
+    }
     auto memory_block = &memory_[block_index];
 #ifndef NDEBUG
-    ASSERT(!memory_block->isFree_, "Memory block is already free.");
+    assert(!memory_block->isFree_ && "Memory block is already free.");
     memory_block->isFree_ = true;
 #endif
     ptr->~T();
     memory_block->next_ = freeBlockIndex_;
     freeBlockIndex_ = block_index;
     freeBlockCount_++;
+    return true;
   }
 
   MemoryPool(const MemoryPool &) = delete;

@@ -2,21 +2,33 @@
 
 namespace stockex::engine {
 auto OrderBook::addOrder(models::ClientId clientId, models::Side side,
-                         models::Price price,
-                         models::Quantity quantity) noexcept -> models::OrderId {
+                         models::Price price, models::Quantity quantity) noexcept
+    -> std::expected<models::OrderId, OrderBookError> {
+  if (freeList_.empty() && nextId_ >= orders_.size()) [[unlikely]]
+    return std::unexpected(OrderBookError::OrderIdExhausted);
+
   auto *priceLevel = getPriceLevel(price);
 
   if (!priceLevel) {
     priceLevel = addPriceLevel(side, price);
+    if (!priceLevel) [[unlikely]]
+      return std::unexpected(OrderBookError::PriceLevelPoolExhausted);
   }
 
   auto orderId = allocateOrderId();
   auto queueHandle = priceLevel->addOrder({orderId, quantity, clientId});
+  if (!queueHandle.chunk_) [[unlikely]] {
+    releaseOrderId(orderId);
+    return std::unexpected(OrderBookError::OrderQueuePoolExhausted);
+  }
   orders_[orderId] = {queueHandle, price};
   return orderId;
 }
 
-auto OrderBook::removeOrder(models::OrderId orderId) noexcept -> void {
+auto OrderBook::removeOrder(models::OrderId orderId) noexcept
+    -> std::expected<void, OrderBookError> {
+  if (orderId >= orders_.size()) [[unlikely]]
+    return std::unexpected(OrderBookError::InvalidOrderId);
   const auto &order = orders_[orderId];
   auto *priceLevel = getPriceLevel(order.price_);
   if (priceLevel) [[likely]] {
@@ -26,6 +38,7 @@ auto OrderBook::removeOrder(models::OrderId orderId) noexcept -> void {
     }
   }
   releaseOrderId(orderId);
+  return {};
 }
 
 auto OrderBook::match(models::ClientId clientId, models::Side side,
@@ -86,6 +99,8 @@ auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
 
   auto *newPriceLevel =
       priceLevelAllocator_.alloc(side, price, OrderQueueAllocator);
+  if (!newPriceLevel) [[unlikely]]
+    return nullptr;
   priceLevels_[getPriceIndex(price)] = newPriceLevel;
 
   if (!bestPriceLevel) {
