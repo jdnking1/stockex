@@ -129,20 +129,16 @@ TEST_F(OrderQueueTest, RemoveAndPopAcrossChunks) {
 }
 
 TEST_F(OrderQueueTest, PushFailsOnPoolExhaustion) {
-  // Pool of 1 chunk: already used by the constructor's initial allocateNewChunk
   TestQueue::Allocator tinyPool{1};
   TestQueue q(tinyPool);
 
-  // Fill the one existing chunk completely
   for (size_t i = 0; i < TestChunkSize; ++i) {
     auto h = q.push({static_cast<OrderId>(i), 10, 1});
     ASSERT_NE(h.chunk_, nullptr) << "push failed prematurely at i=" << i;
   }
 
-  // Next push would need a new chunk but pool is exhausted
   auto failedHandle = q.push({static_cast<OrderId>(TestChunkSize), 10, 1});
   EXPECT_EQ(failedHandle.chunk_, nullptr);
-  // Size should not have changed
   EXPECT_EQ(q.size(), TestChunkSize);
 }
 
