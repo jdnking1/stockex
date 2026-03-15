@@ -220,6 +220,23 @@ TEST_F(OrderBookTest, RemoveOrderInvalidId) {
   EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
 }
 
+TEST_F(OrderBookTest, RemoveAlreadyRemovedOrderReturnsError) {
+  auto id = *getOrderBook()->addOrder(1, BUY, 100, 50);
+  ASSERT_TRUE(getOrderBook()->removeOrder(id).has_value());
+  // Second remove of the same id must fail
+  auto result = getOrderBook()->removeOrder(id);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
+}
+
+TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
+  // Add one order so that id 0 is allocated; id 1 is in range but never used
+  (void)getOrderBook()->addOrder(1, BUY, 100, 50);
+  auto result = getOrderBook()->removeOrder(1);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
+}
+
 #ifdef NDEBUG
 TEST_F(OrderBookTest, PerformanceTestAddOrder) {
   const int numOrders = 500000;
