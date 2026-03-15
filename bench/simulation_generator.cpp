@@ -92,7 +92,7 @@ auto handleAddOperation(
   const models::Side side =
       (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
   const models::ClientId clientId = 1;
-  const auto orderId = book.addOrder(clientId, side, price, quantity);
+  const auto orderId = book.addOrder(clientId, side, price, quantity).value();
   activeOrdersMap[orderId] = {clientId, price, quantity, side};
   activeOrdersVec.push_back(orderId);
   events.emplace_back(orderId, price, quantity, side, EventType::ADD,
@@ -170,7 +170,7 @@ auto generatePrefillData(
     const auto quantity = qtyDist(rng);
     const auto side =
         (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
-    const auto orderId = book.addOrder(1, side, price, quantity);
+    const auto orderId = book.addOrder(1, side, price, quantity).value();
     activeOrdersMap[orderId] = {1, price, quantity, side};
     activeOrdersVec.push_back(orderId);
     events.emplace_back(orderId, price, quantity, side, EventType::PREFILL, 1);
