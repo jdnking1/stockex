@@ -105,7 +105,7 @@ int main(int argc, char **argv) {
     uint64_t end;
 
     if (evt.type == EventType::PREFILL) {
-      book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
+      (void)book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
       continue;
     }
 
@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
       break;
     case EventType::ADD:
       BENCH_OP(latenciesAdd,
-               book->addOrder(evt.clientId, evt.side, evt.price, evt.qty));
+               (void)book->addOrder(evt.clientId, evt.side, evt.price, evt.qty));
       break;
 
     case EventType::CANCEL:
