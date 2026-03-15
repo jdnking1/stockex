@@ -86,27 +86,33 @@ auto handleAddOperation(
     const SimulationConfig &config,
     std::normal_distribution<> &priceDist,
     std::uniform_int_distribution<models::Quantity> &qtyDist, std::mt19937 &rng,
-    stockex::engine::OrderBook &book) -> void {
+    stockex::engine::OrderBook &book) -> bool {
   const auto price = static_cast<models::Price>(std::round(priceDist(rng)));
   const auto quantity = qtyDist(rng);
   const models::Side side =
       (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
   const models::ClientId clientId = 1;
-  const auto orderId = book.addOrder(clientId, side, price, quantity).value();
+  auto result = book.addOrder(clientId, side, price, quantity);
+  if (!result) {
+    std::print(stderr, "Error: addOrder failed during generation: {}\n",
+               static_cast<int>(result.error()));
+    return false;
+  }
+  const auto orderId = *result;
   activeOrdersMap[orderId] = {clientId, price, quantity, side};
   activeOrdersVec.push_back(orderId);
-  events.emplace_back(orderId, price, quantity, side, EventType::ADD,
-                      clientId);
+  events.emplace_back(orderId, price, quantity, side, EventType::ADD, clientId);
+  return true;
 }
 
 auto handleCancelOperation(
     std::vector<SimulationEvent> &events,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec, std::mt19937 &rng,
-    stockex::engine::OrderBook &book) -> void {
+    stockex::engine::OrderBook &book) -> bool {
   for (auto i = 0; i < 3; i++) {
     if (activeOrdersVec.empty()) {
-      return;
+      return true;
     }
 
     std::uniform_int_distribution<std::size_t> cancelIndexDist(
@@ -127,10 +133,15 @@ auto handleCancelOperation(
       event.clientId = orderDetails.clientId;
       event.orderId = orderToCancel;
       events.push_back(event);
-      book.removeOrder(event.orderId);
-      return;
+      if (auto result = book.removeOrder(event.orderId); !result) {
+        std::print(stderr, "Error: removeOrder failed during generation: {}\n",
+                   static_cast<int>(result.error()));
+        return false;
+      }
+      return true;
     }
   }
+  return true;
 }
 
 auto handleMatchOperation(
@@ -161,7 +172,7 @@ auto generatePrefillData(
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
     const SimulationConfig &config,
-    stockex::engine::OrderBook &book) -> void {
+    stockex::engine::OrderBook &book) -> bool {
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
   std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
 
@@ -170,11 +181,19 @@ auto generatePrefillData(
     const auto quantity = qtyDist(rng);
     const auto side =
         (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
-    const auto orderId = book.addOrder(1, side, price, quantity).value();
+    auto result = book.addOrder(1, side, price, quantity);
+    if (!result) {
+      std::print(stderr,
+                 "Error: addOrder failed during prefill at depth {}: {}\n", i,
+                 static_cast<int>(result.error()));
+      return false;
+    }
+    const auto orderId = *result;
     activeOrdersMap[orderId] = {1, price, quantity, side};
     activeOrdersVec.push_back(orderId);
     events.emplace_back(orderId, price, quantity, side, EventType::PREFILL, 1);
   }
+  return true;
 }
 
 auto generateSimulationData(
@@ -182,7 +201,7 @@ auto generateSimulationData(
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
     const SimulationConfig &config,
-    stockex::engine::OrderBook &book) -> void {
+    stockex::engine::OrderBook &book) -> bool {
   std::uniform_int_distribution actionDist(1, config.orderToTradeRatio);
   std::uniform_int_distribution addCancelDist(1, 100);
   std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
@@ -193,12 +212,13 @@ auto generateSimulationData(
 
     if (eventType < config.orderToTradeRatio) {
       if (addCancelDist(rng) <= config.addProbabilityPercent) {
-        handleAddOperation(events, activeOrdersMap, activeOrdersVec,
-                           config, priceDist, qtyDist, rng,
-                           book);
+        if (!handleAddOperation(events, activeOrdersMap, activeOrdersVec,
+                                config, priceDist, qtyDist, rng, book))
+          return false;
       } else {
-        handleCancelOperation(events, activeOrdersMap, activeOrdersVec, rng,
-                              book);
+        if (!handleCancelOperation(events, activeOrdersMap, activeOrdersVec,
+                                   rng, book))
+          return false;
       }
     } else {
       const auto side = (i % 2 == 0) ? models::Side::SELL : models::Side::BUY;
@@ -206,6 +226,7 @@ auto generateSimulationData(
                            qtyDist, side, rng, book);
     }
   }
+  return true;
 }
 
 }; // namespace stockex::benchmarks
@@ -233,11 +254,17 @@ int main(int argc, char **argv) {
   std::vector<stockex::benchmarks::SimulationEvent> events;
   events.reserve(config.totalEvents);
 
-  generatePrefillData(events, rng, activeOrdersMap, activeOrdersVec,
-                      config, *book);
+  if (!generatePrefillData(events, rng, activeOrdersMap, activeOrdersVec,
+                           config, *book)) {
+    std::print(stderr, "Fatal: generation aborted during prefill.\n");
+    return 1;
+  }
 
-  generateSimulationData(events, rng, activeOrdersMap, activeOrdersVec,
-                         config, *book);
+  if (!generateSimulationData(events, rng, activeOrdersMap, activeOrdersVec,
+                              config, *book)) {
+    std::print(stderr, "Fatal: generation aborted during simulation.\n");
+    return 1;
+  }
 
   simulation_file.write(reinterpret_cast<const char *>(events.data()),
                         events.size() *
