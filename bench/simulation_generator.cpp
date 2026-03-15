@@ -93,7 +93,7 @@ auto handleAddOperation(
       (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
   const models::ClientId clientId = 1;
   auto result = book.addOrder(clientId, side, price, quantity);
-  if (result.has_value()) {
+  if (!result.has_value()) {
     std::print(stderr, "Error: addOrder failed during generation: {}\n",
                std::to_underlying(result.error()));
     return false;
@@ -133,7 +133,7 @@ auto handleCancelOperation(
       event.clientId = orderDetails.clientId;
       event.orderId = orderToCancel;
       events.push_back(event);
-      if (auto result = book.removeOrder(event.orderId); result.has_value()) {
+      if (auto result = book.removeOrder(event.orderId); !result.has_value()) {
         std::print(stderr, "Error: removeOrder failed during generation: {}\n",
                    std::to_underlying(result.error()));
         return false;
@@ -181,7 +181,7 @@ auto generatePrefillData(
     const auto side =
         (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
     auto result = book.addOrder(1, side, price, quantity);
-    if (result.has_value()) {
+    if (!result.has_value()) {
       std::print(stderr,
                  "Error: addOrder failed during prefill at depth {}: {}\n", i,
                  std::to_underlying(result.error()));
