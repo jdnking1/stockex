@@ -52,7 +52,8 @@ public:
     Chunk *current = headChunk_;
     while (current != nullptr) {
       Chunk *next = current->next;
-      assert(allocator_.free(current) && "Bad free in OrderQueue destructor.");
+      [[maybe_unused]] const bool freed = allocator_.free(current);
+      assert(freed && "Bad free in OrderQueue destructor.");
       current = next;
     }
   }
@@ -167,7 +168,8 @@ private:
 
       Chunk *oldHead = headChunk_;
       headChunk_ = headChunk_->next;
-      assert(allocator_.free(oldHead) && "Bad free in advanceHead.");
+      [[maybe_unused]] const bool freed = allocator_.free(oldHead);
+      assert(freed && "Bad free in advanceHead.");
 
       if (headChunk_ != nullptr) {
         headChunk_->prev = nullptr;
