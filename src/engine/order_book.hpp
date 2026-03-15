@@ -35,7 +35,7 @@ class OrderBook {
 public:
   explicit OrderBook(models::InstrumentId instrument,
                      std::size_t maxOrders = models::MAX_NUM_ORDERS)
-      : orders_(maxOrders), instrument_{instrument} {
+      : orders_{maxOrders}, instrument_{instrument} {
     freeList_.reserve(maxOrders);
   }
 
