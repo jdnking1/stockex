@@ -68,7 +68,7 @@ TEST_F(OrderQueueTest, RemoveFromMiddle) {
   getQueue().push({103, 30, 3});
 
   ASSERT_EQ(getQueue().size(), 3);
-  getQueue().remove(handle2);
+  (void)getQueue().remove(handle2);
 
   EXPECT_EQ(getQueue().size(), 2);
   EXPECT_EQ(getQueue().front()->orderId_, 101);
@@ -114,8 +114,8 @@ TEST_F(OrderQueueTest, RemoveAndPopAcrossChunks) {
     handles.push_back(getQueue().push({static_cast<OrderId>(i), 10, 1}));
   }
 
-  getQueue().remove(handles[1]);
-  getQueue().remove(handles[TestChunkSize]);
+  (void)getQueue().remove(handles[1]);
+  (void)getQueue().remove(handles[TestChunkSize]);
 
   getQueue().pop();
   ASSERT_EQ(getQueue().front()->orderId_, 2);
@@ -160,7 +160,7 @@ TEST_F(OrderQueueTest, StressTestWithMixedOperations) {
   }
 
   for (int i = 50; i < 100; ++i) {
-    q.remove(handles[i]);
+    (void)q.remove(handles[i]);
   }
 
   std::erase_if(model, [](const BasicOrder& o){ return o.orderId_ >= 50 && o.orderId_ < 100; });

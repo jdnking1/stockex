@@ -33,12 +33,13 @@ auto OrderBook::removeOrder(models::OrderId orderId) noexcept
   if (order.price_ == models::INVALID_PRICE) [[unlikely]]
     return std::unexpected(OrderBookError::InvalidOrderId);
   auto *priceLevel = getPriceLevel(order.price_);
+  if (!priceLevel) [[unlikely]]
+    return std::unexpected(OrderBookError::InvalidOrderId);
+  if (!priceLevel->removeOrder(order.queueHandle_)) [[unlikely]]
+    return std::unexpected(OrderBookError::InvalidOrderId);
   order.price_ = models::INVALID_PRICE;
-  if (priceLevel) [[likely]] {
-    priceLevel->removeOrder(order.queueHandle_);
-    if (priceLevel->isEmpty()) {
-      removePriceLevel(priceLevel);
-    }
+  if (priceLevel->isEmpty()) {
+    removePriceLevel(priceLevel);
   }
   releaseOrderId(orderId);
   return {};

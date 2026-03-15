@@ -78,7 +78,7 @@ public:
     return Handle{tailChunk_, index};
   }
 
-  auto remove(Handle handle) noexcept -> void {
+  [[nodiscard]] auto remove(Handle handle) noexcept -> bool {
     if (handle.chunk_) {
       const auto wordIndex = handle.index_ / BitsPerWord;
       const auto bitIndex = handle.index_ % BitsPerWord;
@@ -87,8 +87,10 @@ public:
       if (handle.chunk_->validityBitmap[wordIndex] & mask) {
         handle.chunk_->validityBitmap[wordIndex] &= ~mask;
         totalSize_--;
+        return true;
       }
     }
+    return false;
   }
 
   auto pop() noexcept -> void {
@@ -96,7 +98,7 @@ public:
       return;
     }
     advanceHead();
-    remove({headChunk_, headOrderIndex_});
+    (void)remove({headChunk_, headOrderIndex_});
   }
 
   [[nodiscard]] auto front() noexcept -> BasicOrder * {

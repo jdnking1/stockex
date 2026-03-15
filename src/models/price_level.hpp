@@ -34,8 +34,8 @@ struct PriceLevel {
     return orders_.front();
   }
 
-  auto removeOrder(DefaultOrderQueue::Handle handle) noexcept -> void {
-    orders_.remove(handle);
+  [[nodiscard]] auto removeOrder(DefaultOrderQueue::Handle handle) noexcept -> bool {
+    return orders_.remove(handle);
   }
 
   auto popFrontOrder() noexcept -> void { orders_.pop(); }

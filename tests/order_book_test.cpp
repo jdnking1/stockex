@@ -229,6 +229,15 @@ TEST_F(OrderBookTest, RemoveAlreadyRemovedOrderReturnsError) {
   EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
 }
 
+TEST_F(OrderBookTest, RemoveFullyMatchedOrderReturnsError) {
+  auto id = AddOrderAndVerify(1, SELL, 100, 50);
+  auto matchResult = getOrderBook()->match(2, BUY, 100, 50);
+  ASSERT_EQ(matchResult.matches_.size(), 1);
+  auto result = getOrderBook()->removeOrder(id);
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
+}
+
 TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
   // Add one order so that id 0 is allocated; id 1 is in range but never used
   (void)getOrderBook()->addOrder(1, BUY, 100, 50);
