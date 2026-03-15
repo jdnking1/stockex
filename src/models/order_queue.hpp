@@ -81,8 +81,6 @@ public:
   auto remove(Handle handle) noexcept -> void {
     if (handle.chunk_) {
       const auto wordIndex = handle.index_ / BitsPerWord;
-      if (wordIndex >= NumBitmapWords) [[unlikely]]
-        return;
       const auto bitIndex = handle.index_ % BitsPerWord;
       const std::uint64_t mask = (1ULL << bitIndex);
 

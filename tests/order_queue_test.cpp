@@ -146,19 +146,6 @@ TEST_F(OrderQueueTest, PushFailsOnPoolExhaustion) {
   EXPECT_EQ(q.size(), TestChunkSize);
 }
 
-TEST_F(OrderQueueTest, RemoveOutOfBoundsIndexIsNoop) {
-  getQueue().push({101, 10, 1});
-  ASSERT_EQ(getQueue().size(), 1);
-
-  // Construct a handle whose index maps to a word beyond the bitmap array
-  Handle badHandle{getQueue().push({102, 20, 2}).chunk_,
-                   TestChunkSize * 2}; // index >= ChunkSize -> wordIndex >= NumBitmapWords
-  getQueue().remove(badHandle);
-
-  // Size must be unchanged — the bad remove is a no-op
-  EXPECT_EQ(getQueue().size(), 2);
-}
-
 TEST_F(OrderQueueTest, StressTestWithMixedOperations) {
   TestQueue::Allocator stress_pool{500};
   TestQueue q(stress_pool);
