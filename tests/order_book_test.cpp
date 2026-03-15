@@ -195,7 +195,7 @@ TEST_F(OrderBookTest, ComplexScenario) {
 
 TEST_F(OrderBookTest, FreeListReusesIds) {
   auto id1 = *getOrderBook()->addOrder(1, BUY, 100, 50);
-  (void)getOrderBook()->addOrder(1, BUY, 101, 30);
+  [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 101, 30);
   getOrderBook()->removeOrder(id1);
   auto id3 = *getOrderBook()->addOrder(1, BUY, 102, 20);
   EXPECT_EQ(id3, id1);
@@ -240,7 +240,7 @@ TEST_F(OrderBookTest, RemoveFullyMatchedOrderReturnsError) {
 
 TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
   // Add one order so that id 0 is allocated; id 1 is in range but never used
-  (void)getOrderBook()->addOrder(1, BUY, 100, 50);
+  [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100, 50);
   auto result = getOrderBook()->removeOrder(1);
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
@@ -250,11 +250,11 @@ TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
 TEST_F(OrderBookTest, PerformanceTestAddOrder) {
   const int numOrders = 500000;
   for (int i = 0; i < numOrders; ++i) {
-    (void)getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
+    [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
   }
   auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < numOrders; ++i) {
-    (void)getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
+    [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::micro> duration = end - start;
@@ -284,7 +284,7 @@ TEST_F(OrderBookTest, PerformanceTestRemoveOrder) {
 TEST_F(OrderBookTest, PerformanceTestMatchOrder) {
   const int numOrders = 500000;
   for (int i = 0; i < numOrders; ++i) {
-    (void)getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
+    [[maybe_unused]] auto r = getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
   }
   int totalMatches{};
   auto start = std::chrono::high_resolution_clock::now();

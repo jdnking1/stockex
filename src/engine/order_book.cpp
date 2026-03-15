@@ -27,16 +27,17 @@ auto OrderBook::addOrder(models::ClientId clientId, models::Side side,
 
 auto OrderBook::removeOrder(models::OrderId orderId) noexcept
     -> std::expected<void, OrderBookError> {
+  using enum OrderBookError;
   if (orderId >= orders_.size()) [[unlikely]]
-    return std::unexpected(OrderBookError::InvalidOrderId);
+    return std::unexpected(InvalidOrderId);
   auto &order = orders_[orderId];
   if (order.price_ == models::INVALID_PRICE) [[unlikely]]
-    return std::unexpected(OrderBookError::InvalidOrderId);
+    return std::unexpected(InvalidOrderId);
   auto *priceLevel = getPriceLevel(order.price_);
   if (!priceLevel) [[unlikely]]
-    return std::unexpected(OrderBookError::InvalidOrderId);
+    return std::unexpected(InvalidOrderId);
   if (!priceLevel->removeOrder(order.queueHandle_)) [[unlikely]]
-    return std::unexpected(OrderBookError::InvalidOrderId);
+    return std::unexpected(InvalidOrderId);
   order.price_ = models::INVALID_PRICE;
   if (priceLevel->isEmpty()) {
     removePriceLevel(priceLevel);
