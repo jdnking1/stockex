@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <expected>
 #include <span>
 #include <vector>
 
@@ -11,6 +12,13 @@
 #include "utils/memory_pool.hpp"
 
 namespace stockex::engine {
+
+enum class OrderBookError : uint8_t {
+  OrderIdExhausted,
+  PriceLevelPoolExhausted,
+  OrderQueuePoolExhausted,
+  InvalidOrderId,
+};
 
 struct MatchResult {
   models::OrderId incomingOrderId_{};
@@ -44,11 +52,13 @@ public:
   OrderBook &operator=(const OrderBook &) = delete;
   OrderBook &operator=(OrderBook &&) = delete;
 
-  auto addOrder(models::ClientId clientId, models::Side side,
-                models::Price price, models::Quantity quantity) noexcept
-      -> models::OrderId;
+  [[nodiscard]] auto addOrder(models::ClientId clientId, models::Side side,
+                              models::Price price,
+                              models::Quantity quantity) noexcept
+      -> std::expected<models::OrderId, OrderBookError>;
 
-  void removeOrder(models::OrderId orderId) noexcept;
+  auto removeOrder(models::OrderId orderId) noexcept
+      -> std::expected<void, OrderBookError>;
 
   [[nodiscard]] MatchResultSet match(models::ClientId clientId,
                                      models::Side side, models::Price price,
@@ -100,6 +110,7 @@ private:
   auto removePriceLevel(models::PriceLevel *priceLevel) noexcept -> void;
 
   auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {
+    releaseOrderId(priceLevel->getFrontOrder()->orderId_);
     priceLevel->popFrontOrder();
     if (priceLevel->isEmpty()) {
       removePriceLevel(priceLevel);

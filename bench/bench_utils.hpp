@@ -146,18 +146,4 @@ inline auto measureOverhead() -> uint64_t {
   return min_diff;
 }
 
-#define BENCH_OP(VECTOR, CODE)                                       \
-  do {                                                                         \
-    uint64_t _start, _end;                                                     \
-    _mm_lfence();                                                              \
-    _start = __rdtsc();                                                        \
-    _mm_lfence();                                                              \
-    CODE;                                                                      \
-    _mm_lfence();                                                              \
-    _end = __rdtsc();                                                          \
-    _mm_lfence();                                                              \
-    uint64_t _raw = _end - _start;                                             \
-    (VECTOR).push_back(_raw);                                                  \
-  } while (0)
-
 } // namespace stockex::benchmarks

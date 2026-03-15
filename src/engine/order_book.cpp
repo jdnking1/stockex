@@ -2,30 +2,52 @@
 
 namespace stockex::engine {
 auto OrderBook::addOrder(models::ClientId clientId, models::Side side,
-                         models::Price price,
-                         models::Quantity quantity) noexcept -> models::OrderId {
+                         models::Price price, models::Quantity quantity) noexcept
+    -> std::expected<models::OrderId, OrderBookError> {
+  if (freeList_.empty() && nextId_ >= orders_.size()) [[unlikely]]
+    return std::unexpected(OrderBookError::OrderIdExhausted);
+
   auto *priceLevel = getPriceLevel(price);
 
   if (!priceLevel) {
     priceLevel = addPriceLevel(side, price);
+    if (!priceLevel) [[unlikely]]
+      return std::unexpected(OrderBookError::PriceLevelPoolExhausted);
   }
 
   auto orderId = allocateOrderId();
   auto queueHandle = priceLevel->addOrder({orderId, quantity, clientId});
+  if (!queueHandle.chunk_) [[unlikely]] {
+    releaseOrderId(orderId);
+    return std::unexpected(OrderBookError::OrderQueuePoolExhausted);
+  }
   orders_[orderId] = {queueHandle, price};
   return orderId;
 }
 
-auto OrderBook::removeOrder(models::OrderId orderId) noexcept -> void {
-  const auto &order = orders_[orderId];
+auto OrderBook::removeOrder(models::OrderId orderId) noexcept
+    -> std::expected<void, OrderBookError> {
+  using enum OrderBookError;
+  if (orderId >= orders_.size()) [[unlikely]]
+    return std::unexpected(InvalidOrderId);
+  auto &order = orders_[orderId];
+  if (order.price_ == models::INVALID_PRICE) [[unlikely]]
+    return std::unexpected(InvalidOrderId);
   auto *priceLevel = getPriceLevel(order.price_);
-  if (priceLevel) [[likely]] {
-    priceLevel->removeOrder(order.queueHandle_);
-    if (priceLevel->isEmpty()) {
-      removePriceLevel(priceLevel);
-    }
+  if (!priceLevel) [[unlikely]] {
+    order.price_ = models::INVALID_PRICE;
+    return std::unexpected(InvalidOrderId);
+  }
+  if (!priceLevel->removeOrder(order.queueHandle_)) [[unlikely]] {
+    order.price_ = models::INVALID_PRICE;
+    return std::unexpected(InvalidOrderId);
+  }
+  order.price_ = models::INVALID_PRICE;
+  if (priceLevel->isEmpty()) {
+    removePriceLevel(priceLevel);
   }
   releaseOrderId(orderId);
+  return {};
 }
 
 auto OrderBook::match(models::ClientId clientId, models::Side side,
@@ -86,6 +108,8 @@ auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
 
   auto *newPriceLevel =
       priceLevelAllocator_.alloc(side, price, OrderQueueAllocator);
+  if (!newPriceLevel) [[unlikely]]
+    return nullptr;
   priceLevels_[getPriceIndex(price)] = newPriceLevel;
 
   if (!bestPriceLevel) {

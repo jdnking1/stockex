@@ -2,7 +2,6 @@
 
 #include <array>
 #include <format>
-#include <vector>
 
 #include "basic_types.hpp"
 #include "constants.hpp"
@@ -34,8 +33,9 @@ struct PriceLevel {
     return orders_.front();
   }
 
-  auto removeOrder(DefaultOrderQueue::Handle handle) noexcept -> void {
-    orders_.remove(handle);
+  [[nodiscard]] auto removeOrder(DefaultOrderQueue::Handle handle) noexcept
+      -> bool {
+    return orders_.remove(handle);
   }
 
   auto popFrontOrder() noexcept -> void { orders_.pop(); }
@@ -62,7 +62,7 @@ struct PriceLevel {
 
 struct OrderInfo {
   QueueHandle queueHandle_{};
-  models::Price price_{};
+  models::Price price_{models::INVALID_PRICE};
 };
 using PriceLevelMap = std::array<PriceLevel *, MAX_PRICE_LEVELS>;
 } // namespace stockex::models

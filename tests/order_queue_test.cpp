@@ -68,7 +68,7 @@ TEST_F(OrderQueueTest, RemoveFromMiddle) {
   getQueue().push({103, 30, 3});
 
   ASSERT_EQ(getQueue().size(), 3);
-  getQueue().remove(handle2);
+  (void)getQueue().remove(handle2);
 
   EXPECT_EQ(getQueue().size(), 2);
   EXPECT_EQ(getQueue().front()->orderId_, 101);
@@ -114,8 +114,8 @@ TEST_F(OrderQueueTest, RemoveAndPopAcrossChunks) {
     handles.push_back(getQueue().push({static_cast<OrderId>(i), 10, 1}));
   }
 
-  getQueue().remove(handles[1]);
-  getQueue().remove(handles[TestChunkSize]);
+  (void)getQueue().remove(handles[1]);
+  (void)getQueue().remove(handles[TestChunkSize]);
 
   getQueue().pop();
   ASSERT_EQ(getQueue().front()->orderId_, 2);
@@ -126,6 +126,20 @@ TEST_F(OrderQueueTest, RemoveAndPopAcrossChunks) {
 
   ASSERT_NE(getQueue().front(), nullptr);
   EXPECT_EQ(getQueue().front()->orderId_, TestChunkSize + 1);
+}
+
+TEST_F(OrderQueueTest, PushFailsOnPoolExhaustion) {
+  TestQueue::Allocator tinyPool{1};
+  TestQueue q(tinyPool);
+
+  for (size_t i = 0; i < TestChunkSize; ++i) {
+    auto h = q.push({static_cast<OrderId>(i), 10, 1});
+    ASSERT_NE(h.chunk_, nullptr) << "push failed prematurely at i=" << i;
+  }
+
+  auto failedHandle = q.push({static_cast<OrderId>(TestChunkSize), 10, 1});
+  EXPECT_EQ(failedHandle.chunk_, nullptr);
+  EXPECT_EQ(q.size(), TestChunkSize);
 }
 
 TEST_F(OrderQueueTest, StressTestWithMixedOperations) {
@@ -142,7 +156,7 @@ TEST_F(OrderQueueTest, StressTestWithMixedOperations) {
   }
 
   for (int i = 50; i < 100; ++i) {
-    q.remove(handles[i]);
+    (void)q.remove(handles[i]);
   }
 
   std::erase_if(model, [](const BasicOrder& o){ return o.orderId_ >= 50 && o.orderId_ < 100; });

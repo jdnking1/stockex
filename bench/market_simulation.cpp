@@ -9,6 +9,24 @@
 #include "engine/order_book.hpp"
 #include "simulation_event.hpp"
 
+// clang-format off
+#define BENCH_OP(VECTOR, CODE)                                                 \
+  do {                                                                         \
+    uint64_t _start, _end;                                                     \
+    _mm_lfence();                                                              \
+    _start = __rdtsc();                                                        \
+    _mm_lfence();                                                              \
+    auto r = CODE;                                                             \
+    _mm_lfence();                                                              \
+    _end = __rdtsc();                                                          \
+    _mm_lfence();                                                              \
+    if (r.has_value()) {                                                       \
+      uint64_t _raw = _end - _start;                                          \
+      (VECTOR).push_back(_raw);                                                \
+    }                                                                          \
+  } while (0)
+// clang-format on
+
 using namespace stockex::benchmarks;
 
 auto loadEvents(const std::string &filename) -> std::vector<SimulationEvent> {
@@ -105,7 +123,8 @@ int main(int argc, char **argv) {
     uint64_t end;
 
     if (evt.type == EventType::PREFILL) {
-      book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
+      [[maybe_unused]] auto r =
+          book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
       continue;
     }
 
