@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <optional>
 #include <immintrin.h>
 
 #include "basic_types.hpp"

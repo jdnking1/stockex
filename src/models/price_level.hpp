@@ -62,11 +62,7 @@ struct PriceLevel {
 
 struct OrderInfo {
   QueueHandle queueHandle_{};
-  models::OrderId marketOrderId_{};
   models::Price price_{};
 };
-
-using OrderMap = std::vector<OrderInfo>;
-using ClientOrderMap = std::array<OrderMap, MAX_NUM_CLIENTS>;
 using PriceLevelMap = std::array<PriceLevel *, MAX_PRICE_LEVELS>;
 } // namespace stockex::models

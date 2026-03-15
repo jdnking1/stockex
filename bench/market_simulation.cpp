@@ -105,8 +105,7 @@ int main(int argc, char **argv) {
     uint64_t end;
 
     if (evt.type == EventType::PREFILL) {
-      book->addOrder(evt.clientId, evt.orderId, evt.orderId, evt.side,
-                     evt.price, evt.qty);
+      book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
       continue;
     }
 
@@ -115,20 +114,18 @@ int main(int argc, char **argv) {
       break;
     case EventType::ADD:
       BENCH_OP(latenciesAdd,
-               book->addOrder(evt.clientId, evt.orderId, evt.orderId, evt.side,
-                              evt.price, evt.qty));
+               book->addOrder(evt.clientId, evt.side, evt.price, evt.qty));
       break;
 
     case EventType::CANCEL:
-      BENCH_OP(latenciesCancel, book->removeOrder(evt.clientId, evt.orderId));
+      BENCH_OP(latenciesCancel, book->removeOrder(evt.orderId));
       break;
 
     case EventType::MATCH:
       _mm_lfence();
       start = __rdtsc();
       _mm_lfence();
-      auto res =
-          book->match(evt.clientId, evt.orderId, evt.side, evt.price, evt.qty);
+      auto res = book->match(evt.clientId, evt.side, evt.price, evt.qty);
       _mm_lfence();
       end = __rdtsc();
       _mm_lfence();
