@@ -224,11 +224,11 @@ TEST_F(OrderBookTest, RemoveOrderInvalidId) {
 TEST_F(OrderBookTest, PerformanceTestAddOrder) {
   const int numOrders = 500000;
   for (int i = 0; i < numOrders; ++i) {
-    (void)getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
+    getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
   }
   auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < numOrders; ++i) {
-    (void)getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
+    getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::micro> duration = end - start;
@@ -258,7 +258,7 @@ TEST_F(OrderBookTest, PerformanceTestRemoveOrder) {
 TEST_F(OrderBookTest, PerformanceTestMatchOrder) {
   const int numOrders = 500000;
   for (int i = 0; i < numOrders; ++i) {
-    (void)getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
+    getOrderBook()->addOrder(1, BUY, 100 + (i % 10), 50);
   }
   int totalMatches{};
   auto start = std::chrono::high_resolution_clock::now();
