@@ -8,6 +8,7 @@
 #include <print>
 #include <random>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace stockex::benchmarks {
@@ -83,8 +84,7 @@ auto handleAddOperation(
     std::vector<SimulationEvent> &events,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
-    const SimulationConfig &config,
-    std::normal_distribution<> &priceDist,
+    const SimulationConfig &config, std::normal_distribution<> &priceDist,
     std::uniform_int_distribution<models::Quantity> &qtyDist, std::mt19937 &rng,
     stockex::engine::OrderBook &book) -> bool {
   const auto price = static_cast<models::Price>(std::round(priceDist(rng)));
@@ -93,9 +93,9 @@ auto handleAddOperation(
       (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
   const models::ClientId clientId = 1;
   auto result = book.addOrder(clientId, side, price, quantity);
-  if (!result) {
+  if (result.has_value()) {
     std::print(stderr, "Error: addOrder failed during generation: {}\n",
-               static_cast<int>(result.error()));
+               std::to_underlying(result.error()));
     return false;
   }
   const auto orderId = *result;
@@ -133,9 +133,9 @@ auto handleCancelOperation(
       event.clientId = orderDetails.clientId;
       event.orderId = orderToCancel;
       events.push_back(event);
-      if (auto result = book.removeOrder(event.orderId); !result) {
+      if (auto result = book.removeOrder(event.orderId); result.has_value()) {
         std::print(stderr, "Error: removeOrder failed during generation: {}\n",
-                   static_cast<int>(result.error()));
+                   std::to_underlying(result.error()));
         return false;
       }
       return true;
@@ -171,8 +171,7 @@ auto generatePrefillData(
     std::vector<SimulationEvent> &events, std::mt19937 &rng,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
-    const SimulationConfig &config,
-    stockex::engine::OrderBook &book) -> bool {
+    const SimulationConfig &config, stockex::engine::OrderBook &book) -> bool {
   std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
   std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
 
@@ -182,10 +181,10 @@ auto generatePrefillData(
     const auto side =
         (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
     auto result = book.addOrder(1, side, price, quantity);
-    if (!result) {
+    if (result.has_value()) {
       std::print(stderr,
                  "Error: addOrder failed during prefill at depth {}: {}\n", i,
-                 static_cast<int>(result.error()));
+                 std::to_underlying(result.error()));
       return false;
     }
     const auto orderId = *result;
@@ -200,8 +199,7 @@ auto generateSimulationData(
     std::vector<SimulationEvent> &events, std::mt19937 &rng,
     std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
     std::vector<models::OrderId> &activeOrdersVec,
-    const SimulationConfig &config,
-    stockex::engine::OrderBook &book) -> bool {
+    const SimulationConfig &config, stockex::engine::OrderBook &book) -> bool {
   std::uniform_int_distribution actionDist(1, config.orderToTradeRatio);
   std::uniform_int_distribution addCancelDist(1, 100);
   std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
@@ -222,8 +220,8 @@ auto generateSimulationData(
       }
     } else {
       const auto side = (i % 2 == 0) ? models::Side::SELL : models::Side::BUY;
-      handleMatchOperation(events, activeOrdersMap, config,
-                           qtyDist, side, rng, book);
+      handleMatchOperation(events, activeOrdersMap, config, qtyDist, side, rng,
+                           book);
     }
   }
   return true;

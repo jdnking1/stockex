@@ -123,7 +123,8 @@ int main(int argc, char **argv) {
     uint64_t end;
 
     if (evt.type == EventType::PREFILL) {
-      (void)book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
+      [[maybe_unused]] auto r =
+          book->addOrder(evt.clientId, evt.side, evt.price, evt.qty);
       continue;
     }
 

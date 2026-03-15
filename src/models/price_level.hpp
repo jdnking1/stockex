@@ -2,7 +2,6 @@
 
 #include <array>
 #include <format>
-#include <vector>
 
 #include "basic_types.hpp"
 #include "constants.hpp"
@@ -34,7 +33,8 @@ struct PriceLevel {
     return orders_.front();
   }
 
-  [[nodiscard]] auto removeOrder(DefaultOrderQueue::Handle handle) noexcept -> bool {
+  [[nodiscard]] auto removeOrder(DefaultOrderQueue::Handle handle) noexcept
+      -> bool {
     return orders_.remove(handle);
   }
 
