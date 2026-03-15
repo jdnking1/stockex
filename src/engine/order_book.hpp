@@ -110,6 +110,7 @@ private:
   auto removePriceLevel(models::PriceLevel *priceLevel) noexcept -> void;
 
   auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {
+    releaseOrderId(priceLevel->getFrontOrder()->orderId_);
     priceLevel->popFrontOrder();
     if (priceLevel->isEmpty()) {
       removePriceLevel(priceLevel);
