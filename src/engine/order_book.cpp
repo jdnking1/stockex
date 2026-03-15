@@ -32,6 +32,7 @@ auto OrderBook::match(models::ClientId clientId, models::Side side,
                       models::Price price,
                       models::Quantity quantity) noexcept -> MatchResultSet {
   auto *&bestPriceLevel = (side == models::Side::BUY) ? bestAsk_ : bestBid_;
+  auto incomingOrderId = peekNextOrderId();
   auto remainingQuantity = quantity;
   std::size_t matchCount{};
 
@@ -45,7 +46,8 @@ auto OrderBook::match(models::ClientId clientId, models::Side side,
     remainingQuantity -= matchedQty;
     matchedOrder->qty_ -= matchedQty;
 
-    matchResults_[matchCount] = {matchedOrder->orderId_,
+    matchResults_[matchCount] = {incomingOrderId,
+                                 matchedOrder->orderId_,
                                  bestPriceLevel->price_,
                                  matchedQty,
                                  matchedOrder->qty_,

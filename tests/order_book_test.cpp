@@ -31,12 +31,14 @@ protected:
   }
 
   auto VerifyMatchResult(const MatchResult &result,
+                         models::OrderId incomingOrderId,
                          models::OrderId matchedOrderId, models::Price price,
                          models::Quantity qty, models::Quantity remainingQty,
                          models::ClientId incomingClientId,
                          models::ClientId matchedClientId,
                          models::Side incomingSide,
                          models::Side matchedSide) const {
+    EXPECT_EQ(result.incomingOrderId_, incomingOrderId);
     EXPECT_EQ(result.matchedOrderId_, matchedOrderId);
     EXPECT_EQ(result.price_, price);
     EXPECT_EQ(result.quantity_, qty);
@@ -99,7 +101,7 @@ TEST_F(OrderBookTest, MatchSingleFullFill) {
   auto sellId = AddOrderAndVerify(1, SELL, 100, 50);
   auto result = getOrderBook()->match(2, BUY, 100, 50);
   ASSERT_EQ(result.matches_.size(), 1);
-  VerifyMatchResult(result.matches_[0], sellId, 100, 50, 0, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[0], 1, sellId, 100, 50, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 0);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
@@ -108,7 +110,7 @@ TEST_F(OrderBookTest, MatchSinglePartialFillIncoming) {
   auto sellId = AddOrderAndVerify(1, SELL, 100, 30);
   auto result = getOrderBook()->match(2, BUY, 100, 50);
   ASSERT_EQ(result.matches_.size(), 1);
-  VerifyMatchResult(result.matches_[0], sellId, 100, 30, 0, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[0], 1, sellId, 100, 30, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 20);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
@@ -117,7 +119,7 @@ TEST_F(OrderBookTest, MatchSinglePartialFillResting) {
   auto sellId = AddOrderAndVerify(1, SELL, 100, 50);
   auto result = getOrderBook()->match(2, BUY, 100, 30);
   ASSERT_EQ(result.matches_.size(), 1);
-  VerifyMatchResult(result.matches_[0], sellId, 100, 30, 20, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[0], 1, sellId, 100, 30, 20, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 0);
   auto *priceLevel = getOrderBook()->getPriceLevel(100);
   ASSERT_NE(priceLevel, nullptr);
@@ -129,8 +131,8 @@ TEST_F(OrderBookTest, MatchMultipleOrdersSamePriceLevel) {
   auto sellId2 = AddOrderAndVerify(1, SELL, 100, 20);
   auto result = getOrderBook()->match(2, BUY, 100, 50);
   ASSERT_EQ(result.matches_.size(), 2);
-  VerifyMatchResult(result.matches_[0], sellId1, 100, 20, 0, 2, 1, BUY, SELL);
-  VerifyMatchResult(result.matches_[1], sellId2, 100, 20, 0, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[0], 2, sellId1, 100, 20, 0, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[1], 2, sellId2, 100, 20, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 10);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
 }
@@ -140,8 +142,8 @@ TEST_F(OrderBookTest, MatchMultiplePriceLevels) {
   auto sellId2 = AddOrderAndVerify(1, SELL, 99, 20);
   auto result = getOrderBook()->match(2, BUY, 100, 50);
   ASSERT_EQ(result.matches_.size(), 2);
-  VerifyMatchResult(result.matches_[0], sellId2, 99, 20, 0, 2, 1, BUY, SELL);
-  VerifyMatchResult(result.matches_[1], sellId1, 100, 20, 0, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[0], 2, sellId2, 99, 20, 0, 2, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[1], 2, sellId1, 100, 20, 0, 2, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 10);
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
   EXPECT_EQ(getOrderBook()->getPriceLevel(99), nullptr);
@@ -178,8 +180,8 @@ TEST_F(OrderBookTest, ComplexScenario) {
 
   auto result = getOrderBook()->match(3, BUY, 100, 100);
   ASSERT_EQ(result.matches_.size(), 2);
-  VerifyMatchResult(result.matches_[0], sellId3, 99, 40, 0, 3, 1, BUY, SELL);
-  VerifyMatchResult(result.matches_[1], sellId1, 100, 25, 0, 3, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[0], 5, sellId3, 99, 40, 0, 3, 1, BUY, SELL);
+  VerifyMatchResult(result.matches_[1], 5, sellId1, 100, 25, 0, 3, 1, BUY, SELL);
   EXPECT_EQ(result.remainingQuantity_, 35);
 
   EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);

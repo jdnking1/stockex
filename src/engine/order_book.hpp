@@ -13,6 +13,7 @@
 namespace stockex::engine {
 
 struct MatchResult {
+  models::OrderId incomingOrderId_{};
   models::OrderId matchedOrderId_{};
   models::Price price_{};
   models::Quantity quantity_{};
@@ -80,6 +81,13 @@ private:
       return id;
     }
     return nextId_++;
+  }
+
+  [[nodiscard]] auto peekNextOrderId() const noexcept -> models::OrderId {
+    if (!freeList_.empty()) {
+      return freeList_.back();
+    }
+    return nextId_;
   }
 
   auto releaseOrderId(models::OrderId id) noexcept -> void {
