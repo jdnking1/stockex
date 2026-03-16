@@ -74,10 +74,12 @@ TEST_F(OrderBookTest, AddMultipleOrdersSamePriceLevel) {
 TEST_F(OrderBookTest, AddOrdersDifferentPriceLevels) {
   AddOrderAndVerify(1, BUY, 100, 50);
   AddOrderAndVerify(1, BUY, 101, 30);
-  models::PriceLevel *bestBid = getOrderBook()->getPriceLevel(101);
-  ASSERT_NE(bestBid, nullptr);
-  EXPECT_EQ(bestBid->price_, 101);
-  EXPECT_EQ(bestBid->next_->price_, 100);
+  auto *level100 = getOrderBook()->getPriceLevel(100);
+  auto *level101 = getOrderBook()->getPriceLevel(101);
+  ASSERT_NE(level100, nullptr);
+  ASSERT_NE(level101, nullptr);
+  EXPECT_EQ(level100->price_, 100);
+  EXPECT_EQ(level101->price_, 101);
 }
 
 TEST_F(OrderBookTest, RemoveOrder) {
@@ -239,6 +241,29 @@ TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
   auto result = getOrderBook()->removeOrder(1);
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
+}
+
+TEST_F(OrderBookTest, PriceLevelCollisionRegression) {
+  // Prices 100 and 1100 would collide under modulo-1000 hashing.
+  // Both must coexist without data corruption.
+  AddOrderAndVerify(1, BUY, 100, 50);
+  AddOrderAndVerify(1, BUY, 1100, 30);
+
+  auto *level100 = getOrderBook()->getPriceLevel(100);
+  auto *level1100 = getOrderBook()->getPriceLevel(1100);
+  ASSERT_NE(level100, nullptr);
+  ASSERT_NE(level1100, nullptr);
+  EXPECT_EQ(level100->price_, 100);
+  EXPECT_EQ(level1100->price_, 1100);
+  EXPECT_EQ(level100->orders_.front()->qty_, 50);
+  EXPECT_EQ(level1100->orders_.front()->qty_, 30);
+
+  // Remove one — the other must survive.
+  auto id100 = level100->orders_.front()->orderId_;
+  EXPECT_TRUE(getOrderBook()->removeOrder(id100).has_value());
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
+  ASSERT_NE(getOrderBook()->getPriceLevel(1100), nullptr);
+  EXPECT_EQ(getOrderBook()->getPriceLevel(1100)->orders_.front()->qty_, 30);
 }
 
 } // namespace stockex::engine

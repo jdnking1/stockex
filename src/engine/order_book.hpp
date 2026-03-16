@@ -45,6 +45,8 @@ public:
                      std::size_t maxOrders = models::MAX_NUM_ORDERS)
       : orders_{maxOrders}, instrument_{instrument} {
     freeList_.reserve(maxOrders);
+    bids_.reserve(models::MAX_PRICE_LEVELS);
+    asks_.reserve(models::MAX_PRICE_LEVELS);
   }
 
   OrderBook(const OrderBook &) = delete;
@@ -64,10 +66,6 @@ public:
                                      models::Side side, models::Price price,
                                      models::Quantity quantity) noexcept;
 
-  [[nodiscard]] auto getPriceIndex(models::Price price) const noexcept {
-    return price % models::MAX_PRICE_LEVELS;
-  }
-
   [[nodiscard]] auto getOrder(models::OrderId orderId) const noexcept
       -> const models::OrderInfo & {
     return orders_[orderId];
@@ -75,12 +73,28 @@ public:
 
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
-    return priceLevels_[getPriceIndex(price)];
+    for (auto *pl : bids_) {
+      if (pl->price_ == price)
+        return pl;
+    }
+    for (auto *pl : asks_) {
+      if (pl->price_ == price)
+        return pl;
+    }
+    return nullptr;
   }
 
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
-    return priceLevels_[getPriceIndex(price)];
+    for (auto *pl : bids_) {
+      if (pl->price_ == price)
+        return pl;
+    }
+    for (auto *pl : asks_) {
+      if (pl->price_ == price)
+        return pl;
+    }
+    return nullptr;
   }
 
 private:
@@ -117,14 +131,8 @@ private:
     }
   }
 
-  auto insertPriceLevelBefore(models::PriceLevel *current,
-                              models::PriceLevel *newPriceLevel) noexcept
-      -> void;
-
-  models::PriceLevel *bestBid_{};
-  models::PriceLevel *bestAsk_{};
-
-  models::PriceLevelMap priceLevels_{};
+  models::PriceLevelVec bids_;
+  models::PriceLevelVec asks_;
 
   std::vector<models::OrderInfo> orders_;
   std::vector<models::OrderId> freeList_;

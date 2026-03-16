@@ -1,5 +1,7 @@
 #include "order_book.hpp"
 
+#include <algorithm>
+
 namespace stockex::engine {
 auto OrderBook::addOrder(models::ClientId clientId, models::Side side,
                          models::Price price, models::Quantity quantity) noexcept
@@ -53,15 +55,16 @@ auto OrderBook::removeOrder(models::OrderId orderId) noexcept
 auto OrderBook::match(models::ClientId clientId, models::Side side,
                       models::Price price,
                       models::Quantity quantity) noexcept -> MatchResultSet {
-  auto *&bestPriceLevel = (side == models::Side::BUY) ? bestAsk_ : bestBid_;
+  auto &levels = (side == models::Side::BUY) ? asks_ : bids_;
   auto incomingOrderId = peekNextOrderId();
   auto remainingQuantity = quantity;
   std::size_t matchCount{};
 
-  while (remainingQuantity > 0 && bestPriceLevel &&
-         bestPriceLevel->isMatchable(price) &&
+  while (remainingQuantity > 0 && !levels.empty() &&
+         levels.front()->isMatchable(price) &&
          matchCount < models::MAX_MATCH_EVENTS) {
 
+    auto *bestPriceLevel = levels.front();
     auto *matchedOrder = bestPriceLevel->getFrontOrder();
     const auto matchedQty = std::min(remainingQuantity, matchedOrder->qty_);
 
@@ -84,8 +87,9 @@ auto OrderBook::match(models::ClientId clientId, models::Side side,
     }
   }
 
-  const bool overflow = (matchCount == models::MAX_MATCH_EVENTS &&
-                         bestPriceLevel && bestPriceLevel->isMatchable(price));
+  const bool overflow =
+      (matchCount == models::MAX_MATCH_EVENTS && !levels.empty() &&
+       levels.front()->isMatchable(price));
 
   return {{matchResults_.data(), matchCount},
           remainingQuantity,
@@ -93,62 +97,34 @@ auto OrderBook::match(models::ClientId clientId, models::Side side,
           overflow};
 }
 
-auto OrderBook::insertPriceLevelBefore(
-    models::PriceLevel *current, models::PriceLevel *newPriceLevel) noexcept
-    -> void {
-  newPriceLevel->prev_ = current->prev_;
-  newPriceLevel->next_ = current;
-  current->prev_->next_ = newPriceLevel;
-  current->prev_ = newPriceLevel;
-}
-
 auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
     -> models::PriceLevel * {
-  auto *&bestPriceLevel = (side == models::Side::BUY) ? bestBid_ : bestAsk_;
+  auto &levels = (side == models::Side::BUY) ? bids_ : asks_;
 
   auto *newPriceLevel =
       priceLevelAllocator_.alloc(side, price, OrderQueueAllocator);
   if (!newPriceLevel) [[unlikely]]
     return nullptr;
-  priceLevels_[getPriceIndex(price)] = newPriceLevel;
 
-  if (!bestPriceLevel) {
-    bestPriceLevel = newPriceLevel;
-    return newPriceLevel;
-  }
-
-  if (newPriceLevel->isBetter(bestPriceLevel)) {
-    insertPriceLevelBefore(bestPriceLevel, newPriceLevel);
-    bestPriceLevel = newPriceLevel;
-    return newPriceLevel;
-  }
-
-  auto *current = bestPriceLevel->next_;
-  while (current != bestPriceLevel && !newPriceLevel->isBetter(current)) {
-    current = current->next_;
-  }
-  insertPriceLevelBefore(current, newPriceLevel);
+  // Insert in sorted position: best (front) to worst (back)
+  // isBetter means higher price for BUY, lower price for SELL
+  auto it = std::find_if(
+      levels.begin(), levels.end(),
+      [newPriceLevel](const auto *pl) { return newPriceLevel->isBetter(pl); });
+  levels.insert(it, newPriceLevel);
 
   return newPriceLevel;
 }
 
 auto OrderBook::removePriceLevel(models::PriceLevel *priceLevel) noexcept
     -> void {
-  auto *&bestPriceLevel =
-      (priceLevel->side_ == models::Side::BUY) ? bestBid_ : bestAsk_;
+  auto &levels =
+      (priceLevel->side_ == models::Side::BUY) ? bids_ : asks_;
 
-  if (priceLevel->next_ == priceLevel) {
-    bestPriceLevel = nullptr;
-  } else {
-    priceLevel->prev_->next_ = priceLevel->next_;
-    priceLevel->next_->prev_ = priceLevel->prev_;
-
-    if (bestPriceLevel == priceLevel) {
-      bestPriceLevel = priceLevel->next_;
-    }
-    priceLevel->next_ = priceLevel->prev_ = nullptr;
+  auto it = std::find(levels.begin(), levels.end(), priceLevel);
+  if (it != levels.end()) {
+    levels.erase(it);
   }
-  priceLevels_[getPriceIndex(priceLevel->price_)] = nullptr;
   priceLevelAllocator_.free(priceLevel);
 }
 } // namespace stockex::engine

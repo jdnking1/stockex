@@ -1,7 +1,7 @@
 #pragma once
 
-#include <array>
 #include <format>
+#include <vector>
 
 #include "basic_types.hpp"
 #include "constants.hpp"
@@ -16,14 +16,10 @@ struct PriceLevel {
   Side side_{Side::INVALID};
   Price price_{INVALID_PRICE};
   DefaultOrderQueue orders_;
-  PriceLevel *prev_{};
-  PriceLevel *next_{};
 
   PriceLevel(Side side, Price price,
              DefaultOrderQueue::Allocator &allocator) noexcept
-      : side_{side}, price_{price}, orders_{allocator} {
-    prev_ = next_ = this;
-  }
+      : side_{side}, price_{price}, orders_{allocator} {}
 
   [[nodiscard]] auto addOrder(const BasicOrder &order) noexcept -> QueueHandle {
     return orders_.push(order);
@@ -53,10 +49,8 @@ struct PriceLevel {
   }
 
   [[nodiscard]] auto toString() const noexcept {
-    return std::format("PriceLevel[side:{} price:{} prev:{} next:{}]",
-                       sideToString(side_), priceToString(price_),
-                       priceToString(prev_ ? prev_->price_ : INVALID_PRICE),
-                       priceToString(next_ ? next_->price_ : INVALID_PRICE));
+    return std::format("PriceLevel[side:{} price:{}]", sideToString(side_),
+                       priceToString(price_));
   }
 };
 
@@ -64,5 +58,5 @@ struct OrderInfo {
   QueueHandle queueHandle_{};
   models::Price price_{models::INVALID_PRICE};
 };
-using PriceLevelMap = std::array<PriceLevel *, MAX_PRICE_LEVELS>;
+using PriceLevelVec = std::vector<PriceLevel *>;
 } // namespace stockex::models
