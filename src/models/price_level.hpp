@@ -44,8 +44,8 @@ struct PriceLevel {
     return side_ == Side::BUY ? price_ >= p : price_ <= p;
   }
 
-  [[nodiscard]] auto isBetter(const PriceLevel *p) const noexcept {
-    return side_ == Side::BUY ? price_ > p->price_ : price_ < p->price_;
+  [[nodiscard]] auto isBetter(const PriceLevel &p) const noexcept {
+    return side_ == Side::BUY ? price_ > p.price_ : price_ < p.price_;
   }
 
   [[nodiscard]] auto toString() const noexcept {
@@ -58,5 +58,5 @@ struct OrderInfo {
   QueueHandle queueHandle_{};
   models::Price price_{models::INVALID_PRICE};
 };
-using PriceLevelVec = std::vector<PriceLevel *>;
+using PriceLevelVec = std::vector<PriceLevel>;
 } // namespace stockex::models

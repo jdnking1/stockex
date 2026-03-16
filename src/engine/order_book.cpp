@@ -14,7 +14,7 @@ auto OrderBook::addOrder(models::ClientId clientId, models::Side side,
   if (!priceLevel) {
     priceLevel = addPriceLevel(side, price);
     if (!priceLevel) [[unlikely]]
-      return std::unexpected(OrderBookError::PriceLevelPoolExhausted);
+      return std::unexpected(OrderBookError::OrderQueuePoolExhausted);
   }
 
   auto orderId = allocateOrderId();
@@ -46,7 +46,7 @@ auto OrderBook::removeOrder(models::OrderId orderId) noexcept
   }
   order.price_ = models::INVALID_PRICE;
   if (priceLevel->isEmpty()) {
-    removePriceLevel(priceLevel);
+    removePriceLevel(priceLevel->price_, priceLevel->side_);
   }
   releaseOrderId(orderId);
   return {};
@@ -61,11 +61,10 @@ auto OrderBook::match(models::ClientId clientId, models::Side side,
   std::size_t matchCount{};
 
   while (remainingQuantity > 0 && !levels.empty() &&
-         levels.front()->isMatchable(price) &&
+         levels.front().isMatchable(price) &&
          matchCount < models::MAX_MATCH_EVENTS) {
 
-    auto *bestPriceLevel = levels.front();
-    auto *matchedOrder = bestPriceLevel->getFrontOrder();
+    auto *matchedOrder = levels.front().getFrontOrder();
     const auto matchedQty = std::min(remainingQuantity, matchedOrder->qty_);
 
     remainingQuantity -= matchedQty;
@@ -73,23 +72,23 @@ auto OrderBook::match(models::ClientId clientId, models::Side side,
 
     matchResults_[matchCount] = {incomingOrderId,
                                  matchedOrder->orderId_,
-                                 bestPriceLevel->price_,
+                                 levels.front().price_,
                                  matchedQty,
                                  matchedOrder->qty_,
                                  clientId,
                                  matchedOrder->clientId_,
                                  side,
-                                 bestPriceLevel->side_};
+                                 levels.front().side_};
     matchCount++;
 
     if (matchedOrder->qty_ == 0) {
-      removeHeadOrder(bestPriceLevel);
+      removeHeadOrder(levels);
     }
   }
 
   const bool overflow =
       (matchCount == models::MAX_MATCH_EVENTS && !levels.empty() &&
-       levels.front()->isMatchable(price));
+       levels.front().isMatchable(price));
 
   return {{matchResults_.data(), matchCount},
           remainingQuantity,
@@ -101,30 +100,24 @@ auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
     -> models::PriceLevel * {
   auto &levels = (side == models::Side::BUY) ? bids_ : asks_;
 
-  auto *newPriceLevel =
-      priceLevelAllocator_.alloc(side, price, OrderQueueAllocator);
-  if (!newPriceLevel) [[unlikely]]
-    return nullptr;
-
-  // Insert in sorted position: best (front) to worst (back)
-  // isBetter means higher price for BUY, lower price for SELL
   auto it = std::find_if(
       levels.begin(), levels.end(),
-      [newPriceLevel](const auto *pl) { return newPriceLevel->isBetter(pl); });
-  levels.insert(it, newPriceLevel);
-
-  return newPriceLevel;
+      [side, price](const auto &pl) {
+        return side == models::Side::BUY ? price > pl.price_
+                                         : price < pl.price_;
+      });
+  auto inserted = levels.emplace(it, side, price, orderQueueAllocator_);
+  return &*inserted;
 }
 
-auto OrderBook::removePriceLevel(models::PriceLevel *priceLevel) noexcept
-    -> void {
-  auto &levels =
-      (priceLevel->side_ == models::Side::BUY) ? bids_ : asks_;
+auto OrderBook::removePriceLevel(models::Price price,
+                                 models::Side side) noexcept -> void {
+  auto &levels = (side == models::Side::BUY) ? bids_ : asks_;
 
-  auto it = std::find(levels.begin(), levels.end(), priceLevel);
+  auto it = std::find_if(levels.begin(), levels.end(),
+                         [price](const auto &pl) { return pl.price_ == price; });
   if (it != levels.end()) {
     levels.erase(it);
   }
-  priceLevelAllocator_.free(priceLevel);
 }
 } // namespace stockex::engine

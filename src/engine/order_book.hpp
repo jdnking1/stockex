@@ -7,15 +7,12 @@
 
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
-#include "models/order_queue.hpp"
 #include "models/price_level.hpp"
-#include "utils/memory_pool.hpp"
 
 namespace stockex::engine {
 
 enum class OrderBookError : uint8_t {
   OrderIdExhausted,
-  PriceLevelPoolExhausted,
   OrderQueuePoolExhausted,
   InvalidOrderId,
 };
@@ -73,26 +70,28 @@ public:
 
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
-    for (auto *pl : bids_) {
-      if (pl->price_ == price)
-        return pl;
-    }
-    for (auto *pl : asks_) {
-      if (pl->price_ == price)
-        return pl;
+    if (!bids_.empty() && price <= bids_.front().price_) {
+      for (auto &pl : bids_)
+        if (pl.price_ == price)
+          return &pl;
+    } else if (!asks_.empty() && price >= asks_.front().price_) {
+      for (auto &pl : asks_)
+        if (pl.price_ == price)
+          return &pl;
     }
     return nullptr;
   }
 
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
-    for (auto *pl : bids_) {
-      if (pl->price_ == price)
-        return pl;
-    }
-    for (auto *pl : asks_) {
-      if (pl->price_ == price)
-        return pl;
+    if (!bids_.empty() && price <= bids_.front().price_) {
+      for (auto &pl : bids_)
+        if (pl.price_ == price)
+          return &pl;
+    } else if (!asks_.empty() && price >= asks_.front().price_) {
+      for (auto &pl : asks_)
+        if (pl.price_ == price)
+          return &pl;
     }
     return nullptr;
   }
@@ -121,15 +120,18 @@ private:
   auto addPriceLevel(models::Side side, models::Price price) noexcept
       -> models::PriceLevel *;
 
-  auto removePriceLevel(models::PriceLevel *priceLevel) noexcept -> void;
+  auto removePriceLevel(models::Price price, models::Side side) noexcept
+      -> void;
 
-  auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {
-    releaseOrderId(priceLevel->getFrontOrder()->orderId_);
-    priceLevel->popFrontOrder();
-    if (priceLevel->isEmpty()) {
-      removePriceLevel(priceLevel);
+  auto removeHeadOrder(models::PriceLevelVec &levels) noexcept -> void {
+    releaseOrderId(levels.front().getFrontOrder()->orderId_);
+    levels.front().popFrontOrder();
+    if (levels.front().isEmpty()) {
+      levels.erase(levels.begin());
     }
   }
+
+  models::DefaultOrderQueue::Allocator orderQueueAllocator_{10000};
 
   models::PriceLevelVec bids_;
   models::PriceLevelVec asks_;
@@ -139,10 +141,6 @@ private:
   models::OrderId nextId_{0};
 
   std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
-
-  utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
-      models::MAX_PRICE_LEVELS};
-  models::DefaultOrderQueue::Allocator OrderQueueAllocator{10000};
 
   models::InstrumentId instrument_{};
 };

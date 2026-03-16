@@ -44,7 +44,7 @@ public:
   using Handle = OrderHandle<ChunkSize>;
   using Allocator = utils::MemoryPool<Chunk>;
 
-  explicit OrderQueue(Allocator &allocator) : allocator_{allocator} {
+  explicit OrderQueue(Allocator &allocator) : allocator_{&allocator} {
     allocateNewChunk();
   }
 
@@ -52,7 +52,7 @@ public:
     Chunk *current = headChunk_;
     while (current != nullptr) {
       Chunk *next = current->next;
-      [[maybe_unused]] const bool freed = allocator_.free(current);
+      [[maybe_unused]] const bool freed = allocator_->free(current);
       assert(freed && "Bad free in OrderQueue destructor.");
       current = next;
     }
@@ -60,8 +60,37 @@ public:
 
   OrderQueue(const OrderQueue &) = delete;
   OrderQueue &operator=(const OrderQueue &) = delete;
-  OrderQueue(OrderQueue &&) = delete;
-  OrderQueue &operator=(OrderQueue &&) = delete;
+
+  OrderQueue(OrderQueue &&other) noexcept
+      : allocator_{other.allocator_}, headChunk_{other.headChunk_},
+        tailChunk_{other.tailChunk_}, headOrderIndex_{other.headOrderIndex_},
+        totalSize_{other.totalSize_} {
+    other.headChunk_ = nullptr;
+    other.tailChunk_ = nullptr;
+    other.headOrderIndex_ = 0;
+    other.totalSize_ = 0;
+  }
+
+  OrderQueue &operator=(OrderQueue &&other) noexcept {
+    if (this != &other) {
+      Chunk *current = headChunk_;
+      while (current) {
+        Chunk *next = current->next;
+        allocator_->free(current);
+        current = next;
+      }
+      allocator_ = other.allocator_;
+      headChunk_ = other.headChunk_;
+      tailChunk_ = other.tailChunk_;
+      headOrderIndex_ = other.headOrderIndex_;
+      totalSize_ = other.totalSize_;
+      other.headChunk_ = nullptr;
+      other.tailChunk_ = nullptr;
+      other.headOrderIndex_ = 0;
+      other.totalSize_ = 0;
+    }
+    return *this;
+  }
 
   auto push(BasicOrder order) -> Handle {
     if (!tailChunk_ || tailChunk_->highWaterMark >= ChunkSize) {
@@ -114,7 +143,7 @@ public:
 
 private:
   auto allocateNewChunk() noexcept -> bool {
-    auto *newChunk = allocator_.alloc();
+    auto *newChunk = allocator_->alloc();
     if (!newChunk) [[unlikely]]
       return false;
     if (headChunk_ == nullptr) {
@@ -170,7 +199,7 @@ private:
 
       Chunk *oldHead = headChunk_;
       headChunk_ = headChunk_->next;
-      [[maybe_unused]] const bool freed = allocator_.free(oldHead);
+      [[maybe_unused]] const bool freed = allocator_->free(oldHead);
       assert(freed && "Bad free in advanceHead.");
 
       if (headChunk_ != nullptr) {
@@ -183,7 +212,7 @@ private:
     }
   }
 
-  Allocator &allocator_{};
+  Allocator *allocator_{};
   Chunk *headChunk_{};
   Chunk *tailChunk_{};
   std::size_t headOrderIndex_{};
