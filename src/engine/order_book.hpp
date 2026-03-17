@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <expected>
 #include <span>
@@ -8,12 +7,15 @@
 
 #include "models/basic_types.hpp"
 #include "models/constants.hpp"
+#include "models/order_queue.hpp"
 #include "models/price_level.hpp"
+#include "utils/memory_pool.hpp"
 
 namespace stockex::engine {
 
 enum class OrderBookError : uint8_t {
   OrderIdExhausted,
+  PriceLevelPoolExhausted,
   OrderQueuePoolExhausted,
   InvalidOrderId,
 };
@@ -43,8 +45,6 @@ public:
                      std::size_t maxOrders = models::MAX_NUM_ORDERS)
       : orders_{maxOrders}, instrument_{instrument} {
     freeList_.reserve(maxOrders);
-    bids_.reserve(models::MAX_PRICE_LEVELS);
-    asks_.reserve(models::MAX_PRICE_LEVELS);
   }
 
   OrderBook(const OrderBook &) = delete;
@@ -71,36 +71,22 @@ public:
 
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
-    if (!bids_.empty() && price <= bids_.front().price_) {
-      auto it = std::lower_bound(
-          bids_.begin(), bids_.end(), price,
-          [](const auto &pl, models::Price p) { return pl.price_ > p; });
-      if (it != bids_.end() && it->price_ == price)
-        return &*it;
-    } else if (!asks_.empty() && price >= asks_.front().price_) {
-      auto it = std::lower_bound(
-          asks_.begin(), asks_.end(), price,
-          [](const auto &pl, models::Price p) { return pl.price_ < p; });
-      if (it != asks_.end() && it->price_ == price)
-        return &*it;
+    auto idx = price % models::MAX_PRICE_LEVELS;
+    while (priceLevels_[idx] != nullptr) {
+      if (priceLevels_[idx]->price_ == price)
+        return priceLevels_[idx];
+      idx = (idx + 1) % models::MAX_PRICE_LEVELS;
     }
     return nullptr;
   }
 
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
-    if (!bids_.empty() && price <= bids_.front().price_) {
-      auto it = std::lower_bound(
-          bids_.begin(), bids_.end(), price,
-          [](const auto &pl, models::Price p) { return pl.price_ > p; });
-      if (it != bids_.end() && it->price_ == price)
-        return &*it;
-    } else if (!asks_.empty() && price >= asks_.front().price_) {
-      auto it = std::lower_bound(
-          asks_.begin(), asks_.end(), price,
-          [](const auto &pl, models::Price p) { return pl.price_ < p; });
-      if (it != asks_.end() && it->price_ == price)
-        return &*it;
+    auto idx = price % models::MAX_PRICE_LEVELS;
+    while (priceLevels_[idx] != nullptr) {
+      if (priceLevels_[idx]->price_ == price)
+        return priceLevels_[idx];
+      idx = (idx + 1) % models::MAX_PRICE_LEVELS;
     }
     return nullptr;
   }
@@ -129,27 +115,73 @@ private:
   auto addPriceLevel(models::Side side, models::Price price) noexcept
       -> models::PriceLevel *;
 
-  auto removePriceLevel(models::Price price, models::Side side) noexcept
-      -> void;
+  auto removePriceLevel(models::PriceLevel *priceLevel) noexcept -> void;
 
-  auto removeHeadOrder(models::PriceLevelVec &levels) noexcept -> void {
-    releaseOrderId(levels.front().getFrontOrder()->orderId_);
-    levels.front().popFrontOrder();
-    if (levels.front().isEmpty()) {
-      levels.erase(levels.begin());
+  auto removeHeadOrder(models::PriceLevel *priceLevel) noexcept -> void {
+    releaseOrderId(priceLevel->getFrontOrder()->orderId_);
+    priceLevel->popFrontOrder();
+    if (priceLevel->isEmpty()) {
+      removePriceLevel(priceLevel);
     }
   }
 
-  models::DefaultOrderQueue::Allocator orderQueueAllocator_{10000};
+  auto insertPriceLevelBefore(models::PriceLevel *current,
+                              models::PriceLevel *newPriceLevel) noexcept
+      -> void;
 
-  models::PriceLevelVec bids_;
-  models::PriceLevelVec asks_;
+  /// Insert pointer into hash table using linear probing.
+  auto hashInsert(models::PriceLevel *pl) noexcept -> void {
+    auto idx = pl->price_ % models::MAX_PRICE_LEVELS;
+    while (priceLevels_[idx] != nullptr) {
+      idx = (idx + 1) % models::MAX_PRICE_LEVELS;
+    }
+    priceLevels_[idx] = pl;
+  }
+
+  /// Remove entry from hash table using backward-shift deletion.
+  auto hashRemove(models::Price price) noexcept -> void {
+    auto idx = price % models::MAX_PRICE_LEVELS;
+    while (priceLevels_[idx] != nullptr && priceLevels_[idx]->price_ != price) {
+      idx = (idx + 1) % models::MAX_PRICE_LEVELS;
+    }
+    if (priceLevels_[idx] == nullptr)
+      return;
+
+    // Backward-shift deletion: fill the gap by shifting subsequent
+    // entries that would probe past the removed slot.
+    priceLevels_[idx] = nullptr;
+    auto next = (idx + 1) % models::MAX_PRICE_LEVELS;
+    while (priceLevels_[next] != nullptr) {
+      auto natural = priceLevels_[next]->price_ % models::MAX_PRICE_LEVELS;
+      // Check if 'next' sits at or after its natural slot relative to 'idx'.
+      // If the gap at 'idx' is between natural and next (circularly),
+      // then this entry needs to shift back.
+      bool needsShift = (next > idx)
+                            ? (natural <= idx || natural > next)
+                            : (natural <= idx && natural > next);
+      if (needsShift) {
+        priceLevels_[idx] = priceLevels_[next];
+        priceLevels_[next] = nullptr;
+        idx = next;
+      }
+      next = (next + 1) % models::MAX_PRICE_LEVELS;
+    }
+  }
+
+  models::PriceLevel *bestBid_{};
+  models::PriceLevel *bestAsk_{};
+
+  models::PriceLevelMap priceLevels_{};
 
   std::vector<models::OrderInfo> orders_;
   std::vector<models::OrderId> freeList_;
   models::OrderId nextId_{0};
 
   std::array<MatchResult, models::MAX_MATCH_EVENTS> matchResults_{};
+
+  utils::MemoryPool<models::PriceLevel> priceLevelAllocator_{
+      models::MAX_PRICE_LEVELS};
+  models::DefaultOrderQueue::Allocator orderQueueAllocator_{10000};
 
   models::InstrumentId instrument_{};
 };
