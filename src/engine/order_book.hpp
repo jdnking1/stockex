@@ -64,8 +64,8 @@ public:
                                      models::Side side, models::Price price,
                                      models::Quantity quantity) noexcept;
 
-  [[nodiscard]] auto getPriceIndex(models::Price price) const noexcept {
-    return price % models::MAX_PRICE_LEVELS;
+  [[nodiscard]] static auto getPriceIndex(models::Price price) noexcept {
+    return static_cast<std::size_t>(price) & models::PRICE_LEVEL_TABLE_MASK;
   }
 
   [[nodiscard]] auto getOrder(models::OrderId orderId) const noexcept
@@ -75,12 +75,24 @@ public:
 
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
-    return priceLevels_[getPriceIndex(price)];
+    auto idx = getPriceIndex(price);
+    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
+      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
+      if (!priceLevels_[slot]) return nullptr;
+      if (priceLevels_[slot]->price_ == price) return priceLevels_[slot];
+    }
+    return nullptr;
   }
 
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
-    return priceLevels_[getPriceIndex(price)];
+    auto idx = getPriceIndex(price);
+    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
+      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
+      if (!priceLevels_[slot]) return nullptr;
+      if (priceLevels_[slot]->price_ == price) return priceLevels_[slot];
+    }
+    return nullptr;
   }
 
 private:
@@ -102,6 +114,27 @@ private:
 
   auto releaseOrderId(models::OrderId id) noexcept -> void {
     freeList_.push_back(id);
+  }
+
+  [[nodiscard]] auto findEmptySlot(models::Price price) noexcept
+      -> std::size_t {
+    auto idx = getPriceIndex(price);
+    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
+      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
+      if (!priceLevels_[slot]) return slot;
+    }
+    __builtin_unreachable();
+  }
+
+  [[nodiscard]] auto findOccupiedSlot(models::Price price) noexcept
+      -> std::size_t {
+    auto idx = getPriceIndex(price);
+    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
+      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
+      if (priceLevels_[slot] && priceLevels_[slot]->price_ == price)
+        return slot;
+    }
+    __builtin_unreachable();
   }
 
   auto addPriceLevel(models::Side side, models::Price price) noexcept

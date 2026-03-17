@@ -21,6 +21,10 @@ constexpr std::size_t MAX_NUM_ORDERS = 25'000'000;
 /// Maximum price level depth in the order books.
 constexpr std::size_t MAX_PRICE_LEVELS = 1000;
 
+/// Hash table size for price level lookup (power-of-2, must be > MAX_PRICE_LEVELS).
+constexpr std::size_t PRICE_LEVEL_TABLE_SIZE = 2048;
+constexpr std::size_t PRICE_LEVEL_TABLE_MASK = PRICE_LEVEL_TABLE_SIZE - 1;
+
 constexpr std::size_t MAX_MATCH_EVENTS = 1000;
 
 constexpr std::size_t QUEUE_CHUNK_SIZE = 3072;

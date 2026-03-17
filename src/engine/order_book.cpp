@@ -110,7 +110,7 @@ auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
       priceLevelAllocator_.alloc(side, price, OrderQueueAllocator);
   if (!newPriceLevel) [[unlikely]]
     return nullptr;
-  priceLevels_[getPriceIndex(price)] = newPriceLevel;
+  priceLevels_[findEmptySlot(price)] = newPriceLevel;
 
   if (!bestPriceLevel) {
     bestPriceLevel = newPriceLevel;
@@ -148,7 +148,27 @@ auto OrderBook::removePriceLevel(models::PriceLevel *priceLevel) noexcept
     }
     priceLevel->next_ = priceLevel->prev_ = nullptr;
   }
-  priceLevels_[getPriceIndex(priceLevel->price_)] = nullptr;
+  auto slot = findOccupiedSlot(priceLevel->price_);
+  priceLevels_[slot] = nullptr;
   priceLevelAllocator_.free(priceLevel);
+
+  // Backward-shift deletion: shift displaced entries back to fill the gap
+  auto next = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
+  while (priceLevels_[next]) {
+    auto naturalSlot = getPriceIndex(priceLevels_[next]->price_);
+    // Check if entry at `next` belongs at or before `slot` in the probe chain
+    bool needsShift;
+    if (slot < next) {
+      needsShift = (naturalSlot <= slot || naturalSlot > next);
+    } else {
+      needsShift = (naturalSlot <= slot && naturalSlot > next);
+    }
+    if (needsShift) {
+      priceLevels_[slot] = priceLevels_[next];
+      priceLevels_[next] = nullptr;
+      slot = next;
+    }
+    next = (next + 1) & models::PRICE_LEVEL_TABLE_MASK;
+  }
 }
 } // namespace stockex::engine
