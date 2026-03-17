@@ -71,23 +71,29 @@ public:
 
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
-    auto idx = price % models::MAX_PRICE_LEVELS;
-    while (priceLevels_[idx] != nullptr) {
+    const auto start = price % models::MAX_PRICE_LEVELS;
+    auto idx = start;
+    do {
+      if (priceLevels_[idx] == nullptr)
+        return nullptr;
       if (priceLevels_[idx]->price_ == price)
         return priceLevels_[idx];
       idx = (idx + 1) % models::MAX_PRICE_LEVELS;
-    }
+    } while (idx != start);
     return nullptr;
   }
 
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
-    auto idx = price % models::MAX_PRICE_LEVELS;
-    while (priceLevels_[idx] != nullptr) {
+    const auto start = price % models::MAX_PRICE_LEVELS;
+    auto idx = start;
+    do {
+      if (priceLevels_[idx] == nullptr)
+        return nullptr;
       if (priceLevels_[idx]->price_ == price)
         return priceLevels_[idx];
       idx = (idx + 1) % models::MAX_PRICE_LEVELS;
-    }
+    } while (idx != start);
     return nullptr;
   }
 
@@ -130,28 +136,39 @@ private:
       -> void;
 
   /// Insert pointer into hash table using linear probing.
-  auto hashInsert(models::PriceLevel *pl) noexcept -> void {
-    auto idx = pl->price_ % models::MAX_PRICE_LEVELS;
-    while (priceLevels_[idx] != nullptr) {
+  auto hashInsert(models::PriceLevel *pl) noexcept -> bool {
+    const auto start = pl->price_ % models::MAX_PRICE_LEVELS;
+    auto idx = start;
+    do {
+      if (priceLevels_[idx] == nullptr) {
+        priceLevels_[idx] = pl;
+        return true;
+      }
       idx = (idx + 1) % models::MAX_PRICE_LEVELS;
-    }
-    priceLevels_[idx] = pl;
+    } while (idx != start);
+    return false;
   }
 
   /// Remove entry from hash table using backward-shift deletion.
   auto hashRemove(models::Price price) noexcept -> void {
-    auto idx = price % models::MAX_PRICE_LEVELS;
-    while (priceLevels_[idx] != nullptr && priceLevels_[idx]->price_ != price) {
+    const auto start = price % models::MAX_PRICE_LEVELS;
+    auto idx = start;
+    do {
+      if (priceLevels_[idx] == nullptr)
+        return;
+      if (priceLevels_[idx]->price_ == price)
+        break;
       idx = (idx + 1) % models::MAX_PRICE_LEVELS;
-    }
-    if (priceLevels_[idx] == nullptr)
+    } while (idx != start);
+
+    if (priceLevels_[idx] == nullptr || priceLevels_[idx]->price_ != price)
       return;
 
     // Backward-shift deletion: fill the gap by shifting subsequent
     // entries that would probe past the removed slot.
     priceLevels_[idx] = nullptr;
     auto next = (idx + 1) % models::MAX_PRICE_LEVELS;
-    while (priceLevels_[next] != nullptr) {
+    while (next != start && priceLevels_[next] != nullptr) {
       auto natural = priceLevels_[next]->price_ % models::MAX_PRICE_LEVELS;
       // Check if 'next' sits at or after its natural slot relative to 'idx'.
       // If the gap at 'idx' is between natural and next (circularly),
