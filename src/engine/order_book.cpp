@@ -100,11 +100,10 @@ auto OrderBook::addPriceLevel(models::Side side, models::Price price) noexcept
     -> models::PriceLevel * {
   auto &levels = (side == models::Side::BUY) ? bids_ : asks_;
 
-  auto it = std::find_if(
-      levels.begin(), levels.end(),
-      [side, price](const auto &pl) {
-        return side == models::Side::BUY ? price > pl.price_
-                                         : price < pl.price_;
+  auto it = std::lower_bound(
+      levels.begin(), levels.end(), price,
+      [side](const auto &pl, models::Price p) {
+        return side == models::Side::BUY ? pl.price_ > p : pl.price_ < p;
       });
   auto inserted = levels.emplace(it, side, price, orderQueueAllocator_);
   return &*inserted;
@@ -114,9 +113,12 @@ auto OrderBook::removePriceLevel(models::Price price,
                                  models::Side side) noexcept -> void {
   auto &levels = (side == models::Side::BUY) ? bids_ : asks_;
 
-  auto it = std::find_if(levels.begin(), levels.end(),
-                         [price](const auto &pl) { return pl.price_ == price; });
-  if (it != levels.end()) {
+  auto it = std::lower_bound(
+      levels.begin(), levels.end(), price,
+      [side](const auto &pl, models::Price p) {
+        return side == models::Side::BUY ? pl.price_ > p : pl.price_ < p;
+      });
+  if (it != levels.end() && it->price_ == price) {
     levels.erase(it);
   }
 }

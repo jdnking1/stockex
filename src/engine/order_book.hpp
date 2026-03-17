@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <expected>
 #include <span>
@@ -71,13 +72,17 @@ public:
   [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
       -> const models::PriceLevel * {
     if (!bids_.empty() && price <= bids_.front().price_) {
-      for (auto &pl : bids_)
-        if (pl.price_ == price)
-          return &pl;
+      auto it = std::lower_bound(
+          bids_.begin(), bids_.end(), price,
+          [](const auto &pl, models::Price p) { return pl.price_ > p; });
+      if (it != bids_.end() && it->price_ == price)
+        return &*it;
     } else if (!asks_.empty() && price >= asks_.front().price_) {
-      for (auto &pl : asks_)
-        if (pl.price_ == price)
-          return &pl;
+      auto it = std::lower_bound(
+          asks_.begin(), asks_.end(), price,
+          [](const auto &pl, models::Price p) { return pl.price_ < p; });
+      if (it != asks_.end() && it->price_ == price)
+        return &*it;
     }
     return nullptr;
   }
@@ -85,13 +90,17 @@ public:
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
     if (!bids_.empty() && price <= bids_.front().price_) {
-      for (auto &pl : bids_)
-        if (pl.price_ == price)
-          return &pl;
+      auto it = std::lower_bound(
+          bids_.begin(), bids_.end(), price,
+          [](const auto &pl, models::Price p) { return pl.price_ > p; });
+      if (it != bids_.end() && it->price_ == price)
+        return &*it;
     } else if (!asks_.empty() && price >= asks_.front().price_) {
-      for (auto &pl : asks_)
-        if (pl.price_ == price)
-          return &pl;
+      auto it = std::lower_bound(
+          asks_.begin(), asks_.end(), price,
+          [](const auto &pl, models::Price p) { return pl.price_ < p; });
+      if (it != asks_.end() && it->price_ == price)
+        return &*it;
     }
     return nullptr;
   }
