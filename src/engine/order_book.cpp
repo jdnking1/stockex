@@ -152,11 +152,9 @@ auto OrderBook::removePriceLevel(models::PriceLevel *priceLevel) noexcept
   priceLevels_[slot] = nullptr;
   priceLevelAllocator_.free(priceLevel);
 
-  // Backward-shift deletion: shift displaced entries back to fill the gap
   auto next = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
   while (priceLevels_[next]) {
     auto naturalSlot = getPriceIndex(priceLevels_[next]->price_);
-    // Check if entry at `next` belongs at or before `slot` in the probe chain
     bool needsShift;
     if (slot < next) {
       needsShift = (naturalSlot <= slot || naturalSlot > next);

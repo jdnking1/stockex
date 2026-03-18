@@ -73,25 +73,29 @@ public:
     return orders_[orderId];
   }
 
-  [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
-      -> const models::PriceLevel * {
-    auto idx = getPriceIndex(price);
-    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
-      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
-      if (!priceLevels_[slot]) return nullptr;
-      if (priceLevels_[slot]->price_ == price) return priceLevels_[slot];
+  [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
+      -> models::PriceLevel * {
+    auto slot = getPriceIndex(price);
+
+    while (priceLevels_[slot]) {
+      if (priceLevels_[slot]->price_ == price)
+        return priceLevels_[slot];
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
     }
+
     return nullptr;
   }
 
-  [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
-      -> models::PriceLevel * {
-    auto idx = getPriceIndex(price);
-    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
-      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
-      if (!priceLevels_[slot]) return nullptr;
-      if (priceLevels_[slot]->price_ == price) return priceLevels_[slot];
+  [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
+      -> const models::PriceLevel * {
+    auto slot = getPriceIndex(price);
+
+    while (priceLevels_[slot]) {
+      if (priceLevels_[slot]->price_ == price)
+        return priceLevels_[slot];
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
     }
+
     return nullptr;
   }
 
@@ -118,23 +122,24 @@ private:
 
   [[nodiscard]] auto findEmptySlot(models::Price price) noexcept
       -> std::size_t {
-    auto idx = getPriceIndex(price);
-    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
-      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
-      if (!priceLevels_[slot]) return slot;
+    auto slot = getPriceIndex(price);
+
+    while (priceLevels_[slot]) {
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
     }
-    __builtin_unreachable();
+
+    return slot;
   }
 
-  [[nodiscard]] auto findOccupiedSlot(models::Price price) noexcept
+  [[nodiscard]] auto findOccupiedSlot(models::Price price) const noexcept
       -> std::size_t {
-    auto idx = getPriceIndex(price);
-    for (std::size_t i = 0; i < models::PRICE_LEVEL_TABLE_SIZE; ++i) {
-      auto slot = (idx + i) & models::PRICE_LEVEL_TABLE_MASK;
-      if (priceLevels_[slot] && priceLevels_[slot]->price_ == price)
-        return slot;
+    auto slot = getPriceIndex(price);
+
+    while (!priceLevels_[slot] || priceLevels_[slot]->price_ != price) {
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
     }
-    __builtin_unreachable();
+
+    return slot;
   }
 
   auto addPriceLevel(models::Side side, models::Price price) noexcept

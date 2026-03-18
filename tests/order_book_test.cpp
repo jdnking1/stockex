@@ -242,7 +242,6 @@ TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
 }
 
 TEST_F(OrderBookTest, AddOrdersWithCollidingPrices) {
-  // 100 and 2148 both hash to slot 100 (& 0x7FF)
   auto id1 = AddOrderAndVerify(1, BUY, 100, 50);
   auto id2 = AddOrderAndVerify(1, BUY, 2148, 30);
   EXPECT_NE(id1, id2);
@@ -276,7 +275,6 @@ TEST_F(OrderBookTest, RemoveSecondCollidingPrice) {
 }
 
 TEST_F(OrderBookTest, ThreeWayCollisionRemoveMiddle) {
-  // 100, 2148, and 4196 all hash to slot 100
   AddOrderAndVerify(1, BUY, 100, 50);
   auto id2 = AddOrderAndVerify(1, BUY, 2148, 30);
   AddOrderAndVerify(1, BUY, 4196, 20);
