@@ -130,8 +130,8 @@ auto makeScenario(const std::string &name, std::size_t totalEvents)
         {5, {}, 0.05, 0.02},
     };
     cfg.passiveTraders = {
-        {7, {}, 0.10, 0.005},
-        {8, {}, 0.10, 0.005},
+        {7, {}, 0.10, 0.05},
+        {8, {}, 0.10, 0.05},
     };
   } else if (name == "hft") {
     cfg.prefillDepth = 20'000;
@@ -147,7 +147,7 @@ auto makeScenario(const std::string &name, std::size_t totalEvents)
         {4, {}, 0.01, 0.005},
     };
     cfg.passiveTraders = {
-        {7, {}, 0.03, 0.002},
+        {7, {}, 0.03, 0.02},
     };
   } else if (name == "volatile") {
     cfg.prefillDepth = 10'000;
@@ -163,7 +163,7 @@ auto makeScenario(const std::string &name, std::size_t totalEvents)
         {6, {}, 0.12, 0.04},
     };
     cfg.passiveTraders = {
-        {7, {}, 0.08, 0.003},
+        {7, {}, 0.08, 0.04},
     };
   } else if (name == "thin") {
     cfg.prefillDepth = 5'000;
@@ -177,7 +177,7 @@ auto makeScenario(const std::string &name, std::size_t totalEvents)
         {4, {}, 0.03, 0.01},
     };
     cfg.passiveTraders = {
-        {7, {}, 0.05, 0.003},
+        {7, {}, 0.05, 0.03},
     };
   } else {
     std::print(stderr, "Unknown scenario: {}\n", name);
@@ -215,8 +215,12 @@ auto emitCancel(std::vector<ActiveOrder> &tracker, std::size_t index,
                 std::size_t &eventCount) -> bool {
   auto &order = tracker[index];
   auto result = book.removeOrder(order.id);
-  if (!result.has_value())
+  if (!result.has_value()) {
+    // Order already consumed by a match — remove from tracker silently
+    tracker[index] = tracker.back();
+    tracker.pop_back();
     return false;
+  }
   events.emplace_back(order.id, models::Price{}, models::Quantity{},
                       models::Side::INVALID, EventType::CANCEL, clientId);
   ++eventCount;
@@ -403,8 +407,11 @@ auto runSimulation(ScenarioConfig &cfg, engine::OrderBook &book,
 
   std::size_t eventCount = 0;
   std::size_t maxEvents = cfg.totalEvents;
+  constexpr std::size_t MAX_STALL_TICKS = 10'000;
+  std::size_t stallTicks = 0;
 
   while (eventCount < maxEvents) {
+    auto prevCount = eventCount;
     updateMidPrice(ms, rng, prob, spreadNoise);
     auto mid = static_cast<int>(std::round(ms.midPrice));
     auto halfSpread = std::max(ms.spread / 2, 1);
@@ -428,6 +435,18 @@ auto runSimulation(ScenarioConfig &cfg, engine::OrderBook &book,
                        depthDist, eventCount, maxEvents);
       if (eventCount >= maxEvents)
         break;
+    }
+
+    if (eventCount == prevCount) {
+      if (++stallTicks >= MAX_STALL_TICKS) {
+        std::print(stderr,
+                   "Warning: simulation stalled at {} events after {} "
+                   "empty ticks (pool exhausted?), stopping.\n",
+                   eventCount, stallTicks);
+        break;
+      }
+    } else {
+      stallTicks = 0;
     }
   }
 
