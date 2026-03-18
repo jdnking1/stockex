@@ -19,6 +19,7 @@ struct SimulationConfig {
   std::string scenarioName;
   std::size_t totalEvents;
   std::size_t initialBookDepth;
+  std::size_t minBookDepth{0};
   int orderToTradeRatio;
   int addProbabilityPercent;
   models::Price basePrice;
@@ -61,9 +62,10 @@ auto parseConfig(int argc, char **argv) -> SimulationConfig {
     config.addProbabilityPercent = 80;
     config.initialBookDepth = 10'000;
   } else if (scenario == "cancel_heavy") {
-    config.orderToTradeRatio = 50;
-    config.addProbabilityPercent = 20;
-    config.initialBookDepth = 25'000;
+    config.orderToTradeRatio = 100;
+    config.addProbabilityPercent = 9;
+    config.initialBookDepth = 50'000;
+    config.minBookDepth = 5'000;
   } else if (scenario == "match_heavy") {
     config.orderToTradeRatio = 5;
     config.addProbabilityPercent = 55;
@@ -214,9 +216,16 @@ auto generateSimulationData(
                                 config, priceDist, qtyDist, rng, book))
           return false;
       } else {
-        if (!handleCancelOperation(events, activeOrdersMap, activeOrdersVec,
-                                   rng, book))
-          return false;
+        if (config.minBookDepth > 0 &&
+            activeOrdersVec.size() < config.minBookDepth) {
+          if (!handleAddOperation(events, activeOrdersMap, activeOrdersVec,
+                                  config, priceDist, qtyDist, rng, book))
+            return false;
+        } else {
+          if (!handleCancelOperation(events, activeOrdersMap, activeOrdersVec,
+                                     rng, book))
+            return false;
+        }
       }
     } else {
       const auto side = (i % 2 == 0) ? models::Side::SELL : models::Side::BUY;
