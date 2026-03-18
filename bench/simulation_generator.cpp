@@ -3,281 +3,529 @@
 #include "simulation_event.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <print>
 #include <random>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace stockex::benchmarks {
 
 constexpr models::Price BASE_PRICE = 5000;
+constexpr models::Price MIN_PRICE = 3000;
+constexpr models::Price MAX_PRICE = 7000;
 
-struct SimulationConfig {
-  std::string scenarioName;
-  std::size_t totalEvents;
-  std::size_t initialBookDepth;
-  std::size_t minBookDepth{0};
-  int orderToTradeRatio;
-  int addProbabilityPercent;
-  models::Price basePrice;
-  double priceStdDev;
-};
-
-struct ActiveOrderDetails {
-  models::ClientId clientId;
+// ---------------------------------------------------------------------------
+// Active order tracking (per-participant)
+// ---------------------------------------------------------------------------
+struct ActiveOrder {
+  models::OrderId id;
   models::Price price;
-  models::Quantity quantity;
+  models::Quantity qty;
   models::Side side;
 };
 
-auto parseConfig(int argc, char **argv) -> SimulationConfig {
-  if (argc != 4) {
-    std::print(stderr,
-               "Usage: {} <implementation_name> <scenario> <price_std_dev> "
-               "<total_events> \n",
-               argv[0]);
-    std::print(stderr,
-               "Scenarios: add_heavy, cancel_heavy, match_heavy, balanced\n");
-    exit(1);
-  }
+// ---------------------------------------------------------------------------
+// Market state
+// ---------------------------------------------------------------------------
+struct MarketState {
+  double midPrice = BASE_PRICE;
+  int spread = 2; // in ticks
+  int baseSpread = 2;
+  int maxSpread = 5;
+  double volatility = 0.3; // probability of ±1 tick walk per update
+};
 
-  SimulationConfig config;
-  config.scenarioName = argv[1];
+// Safely compute price relative to mid, clamped to valid range
+auto priceFromMid(int mid, int offset, models::Side side) -> models::Price {
+  int raw = (side == models::Side::BUY) ? (mid - offset) : (mid + offset);
+  return static_cast<models::Price>(
+      std::clamp(raw, static_cast<int>(MIN_PRICE), static_cast<int>(MAX_PRICE)));
+}
 
-  try {
-    config.priceStdDev = std::stod(argv[2]);
-    config.totalEvents = std::stoull(argv[3]);
-  } catch (const std::invalid_argument &) {
-    std::print(stderr, "Error: Invalid numeric argument for price_std_dev.\n");
-    exit(1);
-  }
+auto updateMidPrice(MarketState &ms, std::mt19937 &rng,
+                    std::uniform_real_distribution<double> &prob,
+                    std::uniform_int_distribution<int> &spreadNoise) -> void {
+  // Random walk
+  double step = 0.0;
+  double r = prob(rng);
+  if (r < ms.volatility)
+    step = 1.0;
+  else if (r < ms.volatility * 2.0)
+    step = -1.0;
 
-  config.basePrice = BASE_PRICE;
+  // Mean reversion toward BASE_PRICE
+  double dist = ms.midPrice - BASE_PRICE;
+  if (std::abs(dist) > 200.0)
+    step -= 0.1 * (dist / std::abs(dist));
 
-  if (auto scenario = config.scenarioName; scenario == "add_heavy") {
-    config.orderToTradeRatio = 50;
-    config.addProbabilityPercent = 80;
-    config.initialBookDepth = 10'000;
-  } else if (scenario == "cancel_heavy") {
-    config.orderToTradeRatio = 100;
-    config.addProbabilityPercent = 9;
-    config.initialBookDepth = 50'000;
-    config.minBookDepth = 5'000;
-  } else if (scenario == "match_heavy") {
-    config.orderToTradeRatio = 5;
-    config.addProbabilityPercent = 55;
-    config.initialBookDepth = 10'000;
-  } else if (scenario == "balanced") {
-    config.orderToTradeRatio = 5;
-    config.addProbabilityPercent = 60;
-    config.initialBookDepth = 10'000;
+  ms.midPrice += step;
+  ms.midPrice = std::clamp(ms.midPrice, static_cast<double>(MIN_PRICE),
+                           static_cast<double>(MAX_PRICE));
+
+  // Spread jitter
+  ms.spread =
+      std::clamp(ms.baseSpread + spreadNoise(rng), 1, ms.maxSpread);
+}
+
+// ---------------------------------------------------------------------------
+// Participant state structs
+// ---------------------------------------------------------------------------
+struct MarketMakerState {
+  models::ClientId clientId;
+  std::vector<ActiveOrder> orders;
+  int numLevels;
+  int ordersPerLevel;
+  double cancelReplaceProb;
+};
+
+struct AggressiveTraderState {
+  models::ClientId clientId;
+  std::vector<ActiveOrder> orders;
+  double matchProb;
+  double limitProb;
+  int tickCounter = 0;
+};
+
+struct PassiveTraderState {
+  models::ClientId clientId;
+  std::vector<ActiveOrder> orders;
+  double addProb;
+  double cancelProb;
+};
+
+// ---------------------------------------------------------------------------
+// Scenario configuration
+// ---------------------------------------------------------------------------
+struct ScenarioConfig {
+  std::string name;
+  std::size_t totalEvents;
+  std::size_t prefillDepth;
+  int baseSpread;
+  int maxSpread;
+  double volatility;
+  std::vector<MarketMakerState> marketMakers;
+  std::vector<AggressiveTraderState> aggressiveTraders;
+  std::vector<PassiveTraderState> passiveTraders;
+};
+
+auto makeScenario(const std::string &name, std::size_t totalEvents)
+    -> ScenarioConfig {
+  ScenarioConfig cfg;
+  cfg.name = name;
+  cfg.totalEvents = totalEvents;
+
+  if (name == "normal") {
+    cfg.prefillDepth = 10'000;
+    cfg.baseSpread = 2;
+    cfg.maxSpread = 4;
+    cfg.volatility = 0.3;
+    cfg.marketMakers = {
+        {1, {}, 3, 3, 0.60},
+        {2, {}, 3, 3, 0.60},
+    };
+    cfg.aggressiveTraders = {
+        {4, {}, 0.05, 0.02},
+        {5, {}, 0.05, 0.02},
+    };
+    cfg.passiveTraders = {
+        {7, {}, 0.10, 0.005},
+        {8, {}, 0.10, 0.005},
+    };
+  } else if (name == "hft") {
+    cfg.prefillDepth = 20'000;
+    cfg.baseSpread = 1;
+    cfg.maxSpread = 3;
+    cfg.volatility = 0.2;
+    cfg.marketMakers = {
+        {1, {}, 5, 5, 0.92},
+        {2, {}, 5, 5, 0.92},
+        {3, {}, 5, 5, 0.92},
+    };
+    cfg.aggressiveTraders = {
+        {4, {}, 0.01, 0.005},
+    };
+    cfg.passiveTraders = {
+        {7, {}, 0.03, 0.002},
+    };
+  } else if (name == "volatile") {
+    cfg.prefillDepth = 10'000;
+    cfg.baseSpread = 3;
+    cfg.maxSpread = 6;
+    cfg.volatility = 0.5;
+    cfg.marketMakers = {
+        {1, {}, 2, 3, 0.40},
+    };
+    cfg.aggressiveTraders = {
+        {4, {}, 0.15, 0.05},
+        {5, {}, 0.15, 0.05},
+        {6, {}, 0.12, 0.04},
+    };
+    cfg.passiveTraders = {
+        {7, {}, 0.08, 0.003},
+    };
+  } else if (name == "thin") {
+    cfg.prefillDepth = 5'000;
+    cfg.baseSpread = 3;
+    cfg.maxSpread = 6;
+    cfg.volatility = 0.25;
+    cfg.marketMakers = {
+        {1, {}, 2, 2, 0.70},
+    };
+    cfg.aggressiveTraders = {
+        {4, {}, 0.03, 0.01},
+    };
+    cfg.passiveTraders = {
+        {7, {}, 0.05, 0.003},
+    };
   } else {
-    std::print(stderr, "Unknown scenario: {}\n", scenario);
+    std::print(stderr, "Unknown scenario: {}\n", name);
+    std::print(stderr, "Available: normal, hft, volatile, thin\n");
     exit(1);
   }
 
-  return config;
+  return cfg;
 }
 
-auto handleAddOperation(
-    std::vector<SimulationEvent> &events,
-    std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
-    std::vector<models::OrderId> &activeOrdersVec,
-    const SimulationConfig &config, std::normal_distribution<> &priceDist,
-    std::uniform_int_distribution<models::Quantity> &qtyDist, std::mt19937 &rng,
-    stockex::engine::OrderBook &book) -> bool {
-  const auto price = static_cast<models::Price>(std::round(priceDist(rng)));
-  const auto quantity = qtyDist(rng);
-  const models::Side side =
-      (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
-  const models::ClientId clientId = 1;
-  auto result = book.addOrder(clientId, side, price, quantity);
-  if (!result.has_value()) {
-    std::print(stderr, "Error: addOrder failed during generation: {}\n",
-               std::to_underlying(result.error()));
+// ---------------------------------------------------------------------------
+// Helper: emit an ADD event and track it
+// ---------------------------------------------------------------------------
+auto emitAdd(std::vector<ActiveOrder> &tracker,
+             std::vector<SimulationEvent> &events,
+             engine::OrderBook &book, models::ClientId clientId,
+             models::Side side, models::Price price, models::Quantity qty,
+             std::size_t &eventCount) -> bool {
+  auto result = book.addOrder(clientId, side, price, qty);
+  if (!result.has_value())
+    return false; // silently skip (e.g., pool exhausted)
+  auto orderId = *result;
+  tracker.push_back({orderId, price, qty, side});
+  events.emplace_back(orderId, price, qty, side, EventType::ADD, clientId);
+  ++eventCount;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: emit a CANCEL event
+// ---------------------------------------------------------------------------
+auto emitCancel(std::vector<ActiveOrder> &tracker, std::size_t index,
+                std::vector<SimulationEvent> &events,
+                engine::OrderBook &book, models::ClientId clientId,
+                std::size_t &eventCount) -> bool {
+  auto &order = tracker[index];
+  auto result = book.removeOrder(order.id);
+  if (!result.has_value())
     return false;
-  }
-  const auto orderId = *result;
-  activeOrdersMap[orderId] = {clientId, price, quantity, side};
-  activeOrdersVec.push_back(orderId);
-  events.emplace_back(orderId, price, quantity, side, EventType::ADD, clientId);
+  events.emplace_back(order.id, models::Price{}, models::Quantity{},
+                      models::Side::INVALID, EventType::CANCEL, clientId);
+  ++eventCount;
+  // Swap-and-pop removal
+  tracker[index] = tracker.back();
+  tracker.pop_back();
   return true;
 }
 
-auto handleCancelOperation(
-    std::vector<SimulationEvent> &events,
-    std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
-    std::vector<models::OrderId> &activeOrdersVec, std::mt19937 &rng,
-    stockex::engine::OrderBook &book) -> bool {
-  for (auto i = 0; i < 3; i++) {
-    if (activeOrdersVec.empty()) {
-      return true;
-    }
+// ---------------------------------------------------------------------------
+// Market Maker behavior
+// ---------------------------------------------------------------------------
+auto marketMakerAct(MarketMakerState &mm, int mid,
+                    engine::OrderBook &book,
+                    std::vector<SimulationEvent> &events, std::mt19937 &rng,
+                    std::uniform_real_distribution<double> &prob,
+                    std::uniform_int_distribution<models::Quantity> &mmQtyDist,
+                    std::size_t &eventCount, std::size_t maxEvents,
+                    int halfSpread) -> void {
+  if (prob(rng) >= mm.cancelReplaceProb)
+    return;
 
-    std::uniform_int_distribution<std::size_t> cancelIndexDist(
-        0, activeOrdersVec.size() - 1);
-
-    auto randomIndex = cancelIndexDist(rng);
-    models::OrderId orderToCancel = activeOrdersVec[randomIndex];
-
-    activeOrdersVec[randomIndex] = activeOrdersVec.back();
-    activeOrdersVec.pop_back();
-
-    auto it = activeOrdersMap.find(orderToCancel);
-    if (it != activeOrdersMap.end()) {
-      const auto orderDetails = it->second;
-      activeOrdersMap.erase(it);
-      SimulationEvent event;
-      event.type = EventType::CANCEL;
-      event.clientId = orderDetails.clientId;
-      event.orderId = orderToCancel;
-      events.push_back(event);
-      if (auto result = book.removeOrder(event.orderId); !result.has_value()) {
-        std::print(stderr, "Error: removeOrder failed during generation: {}\n",
-                   std::to_underlying(result.error()));
-        return false;
-      }
-      return true;
-    }
+  // Cancel all existing quotes
+  while (!mm.orders.empty() && eventCount < maxEvents) {
+    emitCancel(mm.orders, mm.orders.size() - 1, events, book, mm.clientId,
+               eventCount);
   }
-  return true;
-}
 
-auto handleMatchOperation(
-    std::vector<SimulationEvent> &events,
-    std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
-    const SimulationConfig &config,
-    std::uniform_int_distribution<models::Quantity> &qtyDist, models::Side side,
-    std::mt19937 &rng, stockex::engine::OrderBook &book) -> void {
-  const models::Price price = (side == models::Side::SELL)
-                                  ? (config.basePrice - 20)
-                                  : (config.basePrice + 20);
-  const models::Quantity quantity = qtyDist(rng) * 5;
+  // Re-place quotes at updated prices (signed arithmetic to avoid underflow)
+  for (int level = 0; level < mm.numLevels && eventCount < maxEvents;
+       ++level) {
+    auto bidPrice = priceFromMid(mid, halfSpread + level, models::Side::BUY);
+    auto askPrice = priceFromMid(mid, halfSpread + level, models::Side::SELL);
 
-  events.emplace_back(0, price, quantity, side, EventType::MATCH, 2);
-
-  auto matchResult = book.match(2, side, price, quantity);
-
-  if (!matchResult.matches_.empty()) {
-    std::ranges::for_each(matchResult.matches_,
-                          [&activeOrdersMap](const auto &match) {
-                            activeOrdersMap.erase(match.matchedOrderId_);
-                          });
+    for (int i = 0; i < mm.ordersPerLevel && eventCount < maxEvents; ++i) {
+      auto qty = mmQtyDist(rng);
+      emitAdd(mm.orders, events, book, mm.clientId, models::Side::BUY,
+              bidPrice, qty, eventCount);
+      if (eventCount >= maxEvents)
+        return;
+      emitAdd(mm.orders, events, book, mm.clientId, models::Side::SELL,
+              askPrice, qty, eventCount);
+    }
   }
 }
 
-auto generatePrefillData(
-    std::vector<SimulationEvent> &events, std::mt19937 &rng,
-    std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
-    std::vector<models::OrderId> &activeOrdersVec,
-    const SimulationConfig &config, stockex::engine::OrderBook &book) -> bool {
-  std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
+// ---------------------------------------------------------------------------
+// Aggressive Trader behavior
+// ---------------------------------------------------------------------------
+auto aggressiveTraderAct(AggressiveTraderState &at, int mid,
+                         engine::OrderBook &book,
+                         std::vector<SimulationEvent> &events,
+                         std::mt19937 &rng,
+                         std::uniform_real_distribution<double> &prob,
+                         std::uniform_int_distribution<models::Quantity> &aggQtyDist,
+                         std::uniform_int_distribution<int> &nearSpreadDist,
+                         std::size_t &eventCount, std::size_t maxEvents) -> void {
+  if (eventCount >= maxEvents)
+    return;
+
+  // Marketable order (match)
+  if (prob(rng) < at.matchProb) {
+    at.tickCounter++;
+    auto side =
+        (at.tickCounter % 2 == 0) ? models::Side::BUY : models::Side::SELL;
+    // BUY crosses the ask → high price; SELL crosses the bid → low price
+    auto price = priceFromMid(mid, 30, side == models::Side::BUY
+                                           ? models::Side::SELL  // mid + 30
+                                           : models::Side::BUY); // mid - 30
+    auto qty = aggQtyDist(rng);
+
+    events.emplace_back(0, price, qty, side, EventType::MATCH,
+                        at.clientId);
+    [[maybe_unused]] auto matchResult =
+        book.match(at.clientId, side, price, qty);
+    ++eventCount;
+    return;
+  }
+
+  // Limit order near the spread
+  if (prob(rng) < at.limitProb) {
+    auto side =
+        (prob(rng) < 0.5) ? models::Side::BUY : models::Side::SELL;
+    auto offset = nearSpreadDist(rng);
+    auto price = priceFromMid(mid, offset, side);
+    auto qty = aggQtyDist(rng);
+    emitAdd(at.orders, events, book, at.clientId, side, price, qty,
+            eventCount);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Passive Trader behavior
+// ---------------------------------------------------------------------------
+auto passiveTraderAct(PassiveTraderState &pt, int mid,
+                      engine::OrderBook &book,
+                      std::vector<SimulationEvent> &events,
+                      std::mt19937 &rng,
+                      std::uniform_real_distribution<double> &prob,
+                      std::uniform_int_distribution<models::Quantity> &passiveQtyDist,
+                      std::uniform_int_distribution<int> &depthDist,
+                      std::size_t &eventCount, std::size_t maxEvents) -> void {
+  if (eventCount >= maxEvents)
+    return;
+
+  // Place deep limit order
+  if (prob(rng) < pt.addProb) {
+    auto side =
+        (prob(rng) < 0.5) ? models::Side::BUY : models::Side::SELL;
+    auto offset = depthDist(rng);
+    auto price = priceFromMid(mid, offset, side);
+    auto qty = passiveQtyDist(rng);
+    emitAdd(pt.orders, events, book, pt.clientId, side, price, qty,
+            eventCount);
+  }
+
+  // Occasionally cancel an existing order
+  if (!pt.orders.empty() && prob(rng) < pt.cancelProb &&
+      eventCount < maxEvents) {
+    std::uniform_int_distribution<std::size_t> idxDist(
+        0, pt.orders.size() - 1);
+    auto idx = idxDist(rng);
+    emitCancel(pt.orders, idx, events, book, pt.clientId, eventCount);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prefill: build initial book depth
+// ---------------------------------------------------------------------------
+auto generatePrefill(std::vector<SimulationEvent> &events, std::mt19937 &rng,
+                     engine::OrderBook &book, std::size_t depth) -> bool {
+  std::normal_distribution<> priceDist(BASE_PRICE, 30.0);
   std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
 
-  for (std::size_t i = 0; i < config.initialBookDepth; ++i) {
-    const auto price = static_cast<models::Price>(std::round(priceDist(rng)));
-    const auto quantity = qtyDist(rng);
-    const auto side =
-        (price < config.basePrice) ? models::Side::BUY : models::Side::SELL;
-    auto result = book.addOrder(1, side, price, quantity);
+  constexpr models::ClientId prefillClientId = 10;
+  for (std::size_t i = 0; i < depth; ++i) {
+    auto price =
+        static_cast<models::Price>(std::clamp(static_cast<int>(std::round(priceDist(rng))),
+                                              static_cast<int>(MIN_PRICE),
+                                              static_cast<int>(MAX_PRICE)));
+    auto qty = qtyDist(rng);
+    auto side =
+        (price < BASE_PRICE) ? models::Side::BUY : models::Side::SELL;
+    auto result = book.addOrder(prefillClientId, side, price, qty);
     if (!result.has_value()) {
-      std::print(stderr,
-                 "Error: addOrder failed during prefill at depth {}: {}\n", i,
-                 std::to_underlying(result.error()));
+      std::print(stderr, "Error: addOrder failed during prefill at {}\n", i);
       return false;
     }
-    const auto orderId = *result;
-    activeOrdersMap[orderId] = {1, price, quantity, side};
-    activeOrdersVec.push_back(orderId);
-    events.emplace_back(orderId, price, quantity, side, EventType::PREFILL, 1);
+    auto orderId = *result;
+    events.emplace_back(orderId, price, qty, side, EventType::PREFILL,
+                        prefillClientId);
   }
   return true;
 }
 
-auto generateSimulationData(
-    std::vector<SimulationEvent> &events, std::mt19937 &rng,
-    std::unordered_map<models::OrderId, ActiveOrderDetails> &activeOrdersMap,
-    std::vector<models::OrderId> &activeOrdersVec,
-    const SimulationConfig &config, stockex::engine::OrderBook &book) -> bool {
-  std::uniform_int_distribution actionDist(1, config.orderToTradeRatio);
-  std::uniform_int_distribution addCancelDist(1, 100);
-  std::uniform_int_distribution<models::Quantity> qtyDist(1, 100);
-  std::normal_distribution<> priceDist(config.basePrice, config.priceStdDev);
+// ---------------------------------------------------------------------------
+// Main simulation loop
+// ---------------------------------------------------------------------------
+auto runSimulation(ScenarioConfig &cfg, engine::OrderBook &book,
+                   std::vector<SimulationEvent> &events,
+                   std::mt19937 &rng) -> bool {
+  MarketState ms;
+  ms.baseSpread = cfg.baseSpread;
+  ms.maxSpread = cfg.maxSpread;
+  ms.spread = cfg.baseSpread;
+  ms.volatility = cfg.volatility;
 
-  for (std::size_t i = 0; i < config.totalEvents; ++i) {
-    const int eventType = actionDist(rng);
+  // Pre-allocate participant order vectors
+  for (auto &mm : cfg.marketMakers)
+    mm.orders.reserve(mm.numLevels * mm.ordersPerLevel * 2);
+  for (auto &at : cfg.aggressiveTraders)
+    at.orders.reserve(64);
+  for (auto &pt : cfg.passiveTraders)
+    pt.orders.reserve(256);
 
-    if (eventType < config.orderToTradeRatio) {
-      if (addCancelDist(rng) <= config.addProbabilityPercent) {
-        if (!handleAddOperation(events, activeOrdersMap, activeOrdersVec,
-                                config, priceDist, qtyDist, rng, book))
-          return false;
-      } else {
-        if (config.minBookDepth > 0 &&
-            activeOrdersVec.size() < config.minBookDepth) {
-          if (!handleAddOperation(events, activeOrdersMap, activeOrdersVec,
-                                  config, priceDist, qtyDist, rng, book))
-            return false;
-        } else {
-          if (!handleCancelOperation(events, activeOrdersMap, activeOrdersVec,
-                                     rng, book))
-            return false;
-        }
-      }
-    } else {
-      const auto side = (i % 2 == 0) ? models::Side::SELL : models::Side::BUY;
-      handleMatchOperation(events, activeOrdersMap, config, qtyDist, side, rng,
-                           book);
+  // Hoisted distributions (constructed once, reused every tick)
+  std::uniform_real_distribution<double> prob(0.0, 1.0);
+  std::uniform_int_distribution<int> spreadNoise(-1, 1);
+  std::uniform_int_distribution<models::Quantity> mmQtyDist(1, 20);
+  std::uniform_int_distribution<models::Quantity> aggQtyDist(1, 50);
+  std::uniform_int_distribution<models::Quantity> passiveQtyDist(5, 100);
+  std::uniform_int_distribution<int> nearSpreadDist(1, 5);
+  std::uniform_int_distribution<int> depthDist(10, 49);
+
+  std::size_t eventCount = 0;
+  std::size_t maxEvents = cfg.totalEvents;
+
+  while (eventCount < maxEvents) {
+    updateMidPrice(ms, rng, prob, spreadNoise);
+    auto mid = static_cast<int>(std::round(ms.midPrice));
+    auto halfSpread = std::max(ms.spread / 2, 1);
+
+    for (auto &mm : cfg.marketMakers) {
+      marketMakerAct(mm, mid, book, events, rng, prob, mmQtyDist,
+                     eventCount, maxEvents, halfSpread);
+      if (eventCount >= maxEvents)
+        break;
+    }
+
+    for (auto &at : cfg.aggressiveTraders) {
+      aggressiveTraderAct(at, mid, book, events, rng, prob, aggQtyDist,
+                          nearSpreadDist, eventCount, maxEvents);
+      if (eventCount >= maxEvents)
+        break;
+    }
+
+    for (auto &pt : cfg.passiveTraders) {
+      passiveTraderAct(pt, mid, book, events, rng, prob, passiveQtyDist,
+                       depthDist, eventCount, maxEvents);
+      if (eventCount >= maxEvents)
+        break;
     }
   }
+
   return true;
 }
 
-}; // namespace stockex::benchmarks
+} // namespace stockex::benchmarks
 
 int main(int argc, char **argv) {
-  stockex::benchmarks::SimulationConfig config =
-      stockex::benchmarks::parseConfig(argc, argv);
-  std::ofstream simulation_file(
-      std::format("simulation_{}_{}_{}.bin", config.scenarioName,
-                  config.priceStdDev, config.totalEvents));
-  if (!simulation_file.is_open()) {
-    std::print(stderr, "Fatal: Could not create log file.\n");
+  if (argc != 3) {
+    std::print(stderr, "Usage: {} <scenario> <total_events>\n", argv[0]);
+    std::print(stderr, "Scenarios: normal, hft, volatile, thin\n");
     return 1;
   }
 
-  std::println(" --- generating simulation for scenario {} price_std_dev {}  "
-               "events number {} ---",
-               config.scenarioName, config.priceStdDev, config.totalEvents);
+  std::string scenario = argv[1];
+  std::size_t totalEvents;
+  try {
+    totalEvents = std::stoull(argv[2]);
+  } catch (...) {
+    std::print(stderr, "Error: invalid total_events\n");
+    return 1;
+  }
+
+  auto cfg = stockex::benchmarks::makeScenario(scenario, totalEvents);
+
+  std::ofstream outFile(
+      std::format("simulation_{}_{}.bin", cfg.name, cfg.totalEvents),
+      std::ios::binary);
+  if (!outFile.is_open()) {
+    std::print(stderr, "Fatal: Could not create output file.\n");
+    return 1;
+  }
+
+  std::println("--- Generating {} scenario, {} events ---", cfg.name,
+               cfg.totalEvents);
+
   std::mt19937 rng(42);
   auto book = std::make_unique<stockex::engine::OrderBook>(1);
-  std::unordered_map<stockex::models::OrderId,
-                     stockex::benchmarks::ActiveOrderDetails>
-      activeOrdersMap{};
-  std::vector<stockex::models::OrderId> activeOrdersVec{};
+
   std::vector<stockex::benchmarks::SimulationEvent> events;
-  events.reserve(config.totalEvents);
+  // Market makers generate cancel+add pairs, so actual event count can be ~2x
+  events.reserve(cfg.prefillDepth + cfg.totalEvents * 2);
 
-  if (!generatePrefillData(events, rng, activeOrdersMap, activeOrdersVec,
-                           config, *book)) {
-    std::print(stderr, "Fatal: generation aborted during prefill.\n");
+  // Phase 1: Prefill
+  if (!stockex::benchmarks::generatePrefill(events, rng, *book,
+                                            cfg.prefillDepth)) {
+    std::print(stderr, "Fatal: prefill failed.\n");
+    return 1;
+  }
+  std::println("Prefill: {} orders placed.", cfg.prefillDepth);
+
+  // Phase 2: Simulation
+  if (!stockex::benchmarks::runSimulation(cfg, *book, events, rng)) {
+    std::print(stderr, "Fatal: simulation failed.\n");
     return 1;
   }
 
-  if (!generateSimulationData(events, rng, activeOrdersMap, activeOrdersVec,
-                              config, *book)) {
-    std::print(stderr, "Fatal: generation aborted during simulation.\n");
-    return 1;
+  // Summary statistics
+  std::size_t addCount = 0, cancelCount = 0, matchCount = 0, prefillCount = 0;
+  for (const auto &e : events) {
+    switch (e.type) {
+    case stockex::benchmarks::EventType::ADD:
+      ++addCount;
+      break;
+    case stockex::benchmarks::EventType::CANCEL:
+      ++cancelCount;
+      break;
+    case stockex::benchmarks::EventType::MATCH:
+      ++matchCount;
+      break;
+    case stockex::benchmarks::EventType::PREFILL:
+      ++prefillCount;
+      break;
+    }
   }
 
-  simulation_file.write(reinterpret_cast<const char *>(events.data()),
-                        events.size() *
-                            sizeof(stockex::benchmarks::SimulationEvent));
+  auto simTotal =
+      static_cast<double>(addCount + cancelCount + matchCount);
+  std::println("\n--- Summary (excluding {} prefill events) ---", prefillCount);
+  if (simTotal > 0) {
+    std::println("  ADD:    {:>8}  ({:.1f}%)", addCount,
+                 100.0 * addCount / simTotal);
+    std::println("  CANCEL: {:>8}  ({:.1f}%)", cancelCount,
+                 100.0 * cancelCount / simTotal);
+    std::println("  MATCH:  {:>8}  ({:.1f}%)", matchCount,
+                 100.0 * matchCount / simTotal);
+  }
+  std::println("  Total:  {:>8}", addCount + cancelCount + matchCount);
 
-  std::println("\n--- simulation generated ---");
+  // Write binary
+  outFile.write(reinterpret_cast<const char *>(events.data()),
+                static_cast<std::streamsize>(
+                    events.size() *
+                    sizeof(stockex::benchmarks::SimulationEvent)));
+
+  std::println("\nWrote {} events to simulation_{}_{}.bin", events.size(),
+               cfg.name, cfg.totalEvents);
 
   return 0;
 }
