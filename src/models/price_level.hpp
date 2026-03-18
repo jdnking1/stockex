@@ -64,5 +64,5 @@ struct OrderInfo {
   QueueHandle queueHandle_{};
   models::Price price_{models::INVALID_PRICE};
 };
-using PriceLevelMap = std::array<PriceLevel *, MAX_PRICE_LEVELS>;
+using PriceLevelMap = std::array<PriceLevel *, PRICE_LEVEL_TABLE_SIZE>;
 } // namespace stockex::models

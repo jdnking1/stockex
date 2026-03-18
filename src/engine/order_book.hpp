@@ -64,8 +64,8 @@ public:
                                      models::Side side, models::Price price,
                                      models::Quantity quantity) noexcept;
 
-  [[nodiscard]] auto getPriceIndex(models::Price price) const noexcept {
-    return price % models::MAX_PRICE_LEVELS;
+  [[nodiscard]] static auto getPriceIndex(models::Price price) noexcept {
+    return static_cast<std::size_t>(price) & models::PRICE_LEVEL_TABLE_MASK;
   }
 
   [[nodiscard]] auto getOrder(models::OrderId orderId) const noexcept
@@ -73,14 +73,30 @@ public:
     return orders_[orderId];
   }
 
-  [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
-      -> const models::PriceLevel * {
-    return priceLevels_[getPriceIndex(price)];
-  }
-
   [[nodiscard]] auto getPriceLevel(models::Price price) noexcept
       -> models::PriceLevel * {
-    return priceLevels_[getPriceIndex(price)];
+    auto slot = getPriceIndex(price);
+
+    while (priceLevels_[slot]) {
+      if (priceLevels_[slot]->price_ == price)
+        return priceLevels_[slot];
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
+    }
+
+    return nullptr;
+  }
+
+  [[nodiscard]] auto getPriceLevel(models::Price price) const noexcept
+      -> const models::PriceLevel * {
+    auto slot = getPriceIndex(price);
+
+    while (priceLevels_[slot]) {
+      if (priceLevels_[slot]->price_ == price)
+        return priceLevels_[slot];
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
+    }
+
+    return nullptr;
   }
 
 private:
@@ -102,6 +118,28 @@ private:
 
   auto releaseOrderId(models::OrderId id) noexcept -> void {
     freeList_.push_back(id);
+  }
+
+  [[nodiscard]] auto findEmptySlot(models::Price price) noexcept
+      -> std::size_t {
+    auto slot = getPriceIndex(price);
+
+    while (priceLevels_[slot]) {
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
+    }
+
+    return slot;
+  }
+
+  [[nodiscard]] auto findOccupiedSlot(models::Price price) const noexcept
+      -> std::size_t {
+    auto slot = getPriceIndex(price);
+
+    while (!priceLevels_[slot] || priceLevels_[slot]->price_ != price) {
+      slot = (slot + 1) & models::PRICE_LEVEL_TABLE_MASK;
+    }
+
+    return slot;
   }
 
   auto addPriceLevel(models::Side side, models::Price price) noexcept

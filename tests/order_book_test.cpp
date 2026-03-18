@@ -241,4 +241,51 @@ TEST_F(OrderBookTest, RemoveInRangeButUnusedIdReturnsError) {
   EXPECT_EQ(result.error(), OrderBookError::InvalidOrderId);
 }
 
+TEST_F(OrderBookTest, AddOrdersWithCollidingPrices) {
+  auto id1 = AddOrderAndVerify(1, BUY, 100, 50);
+  auto id2 = AddOrderAndVerify(1, BUY, 2148, 30);
+  EXPECT_NE(id1, id2);
+  auto *pl1 = getOrderBook()->getPriceLevel(100);
+  auto *pl2 = getOrderBook()->getPriceLevel(2148);
+  ASSERT_NE(pl1, nullptr);
+  ASSERT_NE(pl2, nullptr);
+  EXPECT_EQ(pl1->price_, 100);
+  EXPECT_EQ(pl2->price_, 2148);
+  EXPECT_NE(pl1, pl2);
+}
+
+TEST_F(OrderBookTest, RemoveFirstCollidingPrice) {
+  auto id1 = AddOrderAndVerify(1, BUY, 100, 50);
+  AddOrderAndVerify(1, BUY, 2148, 30);
+  EXPECT_TRUE(getOrderBook()->removeOrder(id1).has_value());
+  EXPECT_EQ(getOrderBook()->getPriceLevel(100), nullptr);
+  auto *pl2 = getOrderBook()->getPriceLevel(2148);
+  ASSERT_NE(pl2, nullptr);
+  EXPECT_EQ(pl2->price_, 2148);
+}
+
+TEST_F(OrderBookTest, RemoveSecondCollidingPrice) {
+  AddOrderAndVerify(1, BUY, 100, 50);
+  auto id2 = AddOrderAndVerify(1, BUY, 2148, 30);
+  EXPECT_TRUE(getOrderBook()->removeOrder(id2).has_value());
+  EXPECT_EQ(getOrderBook()->getPriceLevel(2148), nullptr);
+  auto *pl1 = getOrderBook()->getPriceLevel(100);
+  ASSERT_NE(pl1, nullptr);
+  EXPECT_EQ(pl1->price_, 100);
+}
+
+TEST_F(OrderBookTest, ThreeWayCollisionRemoveMiddle) {
+  AddOrderAndVerify(1, BUY, 100, 50);
+  auto id2 = AddOrderAndVerify(1, BUY, 2148, 30);
+  AddOrderAndVerify(1, BUY, 4196, 20);
+  EXPECT_TRUE(getOrderBook()->removeOrder(id2).has_value());
+  EXPECT_EQ(getOrderBook()->getPriceLevel(2148), nullptr);
+  auto *pl1 = getOrderBook()->getPriceLevel(100);
+  auto *pl3 = getOrderBook()->getPriceLevel(4196);
+  ASSERT_NE(pl1, nullptr);
+  ASSERT_NE(pl3, nullptr);
+  EXPECT_EQ(pl1->price_, 100);
+  EXPECT_EQ(pl3->price_, 4196);
+}
+
 } // namespace stockex::engine
