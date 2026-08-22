@@ -1,0 +1,40 @@
+# The Site Configuration
+theme: jekyll-theme-chirpy
+
+lang: en
+timezone: Etc/UTC
+
+# SEO / meta
+title: Stockex
+tagline: Development notes and technical deep-dives
+description: >-
+  Updates, tutorials, and behind-the-scenes posts about [Your Project].
+
+# IMPORTANT for project pages
+url: "https://jdnking1.github.io"
+baseurl: "/stockex"   # must match your repo name exactly, starts with /
+
+github:
+  username: jdnking1
+
+social:
+  name: Jordan King
+  email: jordan.king0901@gmail.com
+  links:
+    - https://github.com/jdnking1
+
+theme_mode: dark        # dark | light | leave blank to let visitors toggle
+
+toc: true                # table of contents sidebar on posts
+
+comments:
+  active: ""              # set to "giscus", "disqus", or "utterances" later if wanted
+
+paginate: 10
+
+exclude:
+  - "*.gem"
+  - "*.gemspec"
+  - tools/
+  - README.md
+  - LICENSE
