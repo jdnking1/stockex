@@ -8,7 +8,7 @@ timezone: Etc/UTC
 title: Stockex
 tagline: Development notes and technical deep-dives
 description: >-
-  Updates, tutorials, and behind-the-scenes posts about [Your Project].
+  Updates, tutorials, and behind-the-scenes posts about Stockex.
 
 # IMPORTANT for project pages
 url: "https://jdnking1.github.io"
